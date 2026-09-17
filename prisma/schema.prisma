@@ -185,3 +185,21 @@ model IncidentRun {
   durationMs  Int
   createdAt   DateTime @default(now())
 }
+
+// ---- Audit log / activity feed ----
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String   // "playbook_run" | "deploy_promote" | "deploy_rollback" | "ai_query" | "pdf_export" | "template_run" | "session_select" | "anomaly_ack" | "synthetic_race" | "manual"
+  category  String   // "devops" | "ai" | "telemetry" | "strategy" | "ops" | "system"
+  actor     String   // engineer name/role e.g. "strategist", "aero-team", "devops-bot", "ai-engineer"
+  target    String?  // what was acted on e.g. "kill-duplicate-workers", "v2.4.1", "session:R2-Q", "TSU tire_fl_temp"
+  detail    String?  // longer description
+  severity  String   @default("info") // "info" | "warning" | "critical" | "success"
+  metaJson  String?  // JSON string of extra metadata
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([category])
+  @@index([action])
+}

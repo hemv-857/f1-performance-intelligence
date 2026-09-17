@@ -37,6 +37,9 @@ interface AppState {
   // AI engineer panel open state (shared so other components can open it)
   aiPanelOpen: boolean
   setAiPanelOpen: (v: boolean) => void
+  // command palette open state (Cmd+K)
+  cmdKOpen: boolean
+  setCmdKOpen: (v: boolean) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -75,5 +78,42 @@ export const useAppStore = create<AppState>((set) => ({
   clearAnomalies: () => set({ anomalies: [] }),
   aiPanelOpen: false,
   setAiPanelOpen: (v) => set({ aiPanelOpen: v }),
+  cmdKOpen: false,
+  setCmdKOpen: (v) => set({ cmdKOpen: v }),
 }))
+
+// ---- Audit log helper (standalone — fire-and-forget POST) ----
+// Not part of Zustand state: this is just an imperative action that any client
+// component can import and call to record a platform action to /api/audit-log.
+export function logAudit(
+  action: string,
+  category: string,
+  actor: string,
+  target?: string | null,
+  detail?: string | null,
+  severity?: string,
+  meta?: Record<string, unknown> | null,
+): void {
+  try {
+    void fetch('/api/audit-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        category,
+        actor,
+        target: target ?? null,
+        detail: detail ?? null,
+        severity: severity ?? 'info',
+        meta: meta ?? null,
+      }),
+      // keepalive lets the request survive navigation/unload in some browsers
+      keepalive: true,
+    }).catch(() => {
+      // swallow — audit logging must never break user-facing flows
+    })
+  } catch {
+    // noop
+  }
+}
 

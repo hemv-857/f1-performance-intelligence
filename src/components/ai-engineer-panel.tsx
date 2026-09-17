@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useAppStore } from '@/lib/store'
+import { useAppStore, logAudit } from '@/lib/store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -27,12 +27,27 @@ const SUGGESTIONS = [
 
 export function AiEngineerPanel() {
   const { selectedSessionId, sessions, anomalies, acknowledgeAnomaly, aiPanelOpen, setAiPanelOpen } = useAppStore()
-  const [messages, setMessages] = useState<ChatMsg[]>([])
+  const [messages, setMessages] = useState<ChatMsg[]>(() => {
+    // Restore conversation from localStorage on mount
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem('rb-ai-conversation')
+      return saved ? JSON.parse(saved) : []
+    } catch { return [] }
+  })
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [contextInfo, setContextInfo] = useState<{ contextSize: number; usedSession: boolean; usedDriver: string | null } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const lastAutoAskedId = useRef<string | null>(null)
+
+  // Persist messages to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem('rb-ai-conversation', JSON.stringify(messages.slice(-30))) // keep last 30
+    } catch { /* ignore quota errors */ }
+  }, [messages])
 
   // auto-scroll to bottom on new message
   useEffect(() => {
@@ -76,6 +91,11 @@ export function AiEngineerPanel() {
       const reply = data.reply || data.error || 'No response.'
       setMessages((m) => [...m, { role: 'assistant', content: reply, ts: Date.now() }])
       setContextInfo({ contextSize: data.contextSize ?? 0, usedSession: data.usedSession ?? false, usedDriver: data.usedDriver ?? null })
+      logAudit('ai_query', 'ai', 'engineer', undefined, text, 'info', {
+        contextSize: data.contextSize ?? 0,
+        usedSession: data.usedSession ?? false,
+        usedDriver: data.usedDriver ?? null,
+      })
     } catch (e: any) {
       setMessages((m) => [...m, { role: 'assistant', content: `Error: ${e?.message ?? 'request failed'}`, ts: Date.now() }])
     } finally {
@@ -86,6 +106,9 @@ export function AiEngineerPanel() {
   const clearChat = () => {
     setMessages([])
     setContextInfo(null)
+    if (typeof window !== 'undefined') {
+      try { localStorage.removeItem('rb-ai-conversation') } catch { /* ignore */ }
+    }
   }
 
   const unackCount = anomalies.filter((a) => !a.acknowledged).length

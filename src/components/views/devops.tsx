@@ -23,6 +23,7 @@ import {
   TooltipContent,
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { logAudit } from '@/lib/store'
 import {
   Workflow,
   GitBranch,
@@ -216,6 +217,15 @@ export function DevOpsView() {
     onSuccess: (data) => {
       toast.success(data.message ?? 'Canary promoted')
       qc.invalidateQueries({ queryKey: ['deployments'] })
+      logAudit(
+        'deploy_promote',
+        'devops',
+        'engineer',
+        data.deployment?.version ?? 'unknown',
+        data.message ?? 'Canary promoted',
+        'success',
+        { canaryPct: data.deployment?.canaryPct },
+      )
     },
     onError: () => toast.error('Failed to promote canary — see server logs'),
   })
@@ -234,6 +244,15 @@ export function DevOpsView() {
       toast.success(data.message ?? 'Rolled back in <1 min')
       qc.invalidateQueries({ queryKey: ['deployments'] })
       qc.invalidateQueries({ queryKey: ['incidents'] })
+      logAudit(
+        'deploy_rollback',
+        'devops',
+        'engineer',
+        data.deployment?.version ?? 'unknown',
+        data.message ?? 'Rolled back in <1 min',
+        'warning',
+        { status: data.deployment?.status },
+      )
     },
     onError: () => toast.error('Rollback failed — manual intervention required'),
   })

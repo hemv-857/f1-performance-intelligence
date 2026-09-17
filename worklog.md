@@ -458,3 +458,40 @@ Unresolved / Next-phase recommendations:
 - Add a constructors championship points progression that uses real session data (currently synthetic but stable).
 - Add a weather forecast (next 30 min / 1 hour prediction) to the weather panel.
 - Add a "strategy timeline" that auto-updates as laps tick (currently the strategy table is static).
+
+---
+Task ID: round-5
+Agent: main (webDevReview cron)
+Task: QA pass + 5 new features (Audit Log, Simulate Anomaly, AI persistence, Weather forecast, Command Palette) + styling polish
+
+Work Log:
+- QA via agent-browser (gateway :81): all 8 views render with ZERO runtime errors. Lint clean. Fixed dev server crash (502 — restarted with `bun run dev`).
+- Audit Log subagent hit the 200-turn limit but had completed ALL its work before stopping: Prisma AuditLog model, /api/audit-log route (GET+POST), seed-audit.ts script (10 entries), logAudit() helper in store.ts, audit-log-drawer.tsx component, app-shell wiring, and instrumentation of devops/race-ops/ai-engineer/telemetry-viewer actions. Verified: /api/audit-log returns seeded entries, drawer opens with filterable list.
+
+New features added:
+1. Engineer Audit Log / Activity Feed (feat-4, subagent): new Prisma `AuditLog` model (action, category, actor, target, detail, severity, metaJson). New API route GET/POST /api/audit-log. 10 seeded entries (playbook_run, deploy_promote/rollback, ai_query, pdf_export, template_run, anomaly_ack, synthetic_race, session_select). `logAudit()` helper exported from store.ts (fire-and-forget POST). New `AuditLogDrawer` slide-out Sheet in the header with category+severity filters, color-coded severity dots, category icons, relative timestamps (date-fns formatDistanceToNow), 15s auto-refresh. Instrumented: devops promote/rollback, race-ops playbook/synthetic runs, AI queries, PDF exports — all log to the audit trail automatically.
+2. Simulate Anomaly button (feat-1, main): new "Simulate anomaly" button (red outline, Zap icon) in the Telemetry Viewer's anomaly detection card header. Injects a random out-of-range anomaly (tire_fl_temp/tire_fr_temp 118-122°C, boost_pressure 3.9-4.1bar, fuel_flow 107-110kg/h, rpm 12600-13000) into the global Zustand anomaly store. This triggers the AI Engineer auto-diagnosis flow (panel auto-opens, LLM auto-asked "ANOMALY DETECTED: ..."). Verified end-to-end: clicked Simulate → anomaly injected → AI panel auto-opened → LLM diagnosed "progressive front-right tire overheating in S1 (Turns 1-5)" and recommended "lift and coast 50m earlier + front ride height +1mm". Also accessible via the Command Palette "Simulate telemetry anomaly" action.
+3. AI Engineer conversation persistence (feat-2, main): the AI panel now saves the last 30 messages to localStorage (`rb-ai-conversation`) on every change and restores them on mount. Clear button also removes the localStorage entry. Conversations survive page reloads.
+4. Weather 30-min forecast (feat-2, main): new forecast strip at the bottom of the Weather panel in Race Ops. 6 time slots (+5m, +10m, +15m, +20m, +25m) each showing: air temp, track temp, wind speed, and a rain probability bar (emerald=DRY, amber=RAIN?). Confidence badge "87%". Uses the same sinusoidal model as the live weather, projected forward.
+5. Command Palette / Cmd+K (feat-1, main): new `CommandPalette` component using shadcn `Command` (cmdk) + `Dialog`. Opens with Cmd+K / Ctrl+K (global keydown listener) or a "Search ⌘K" button in the header. Lists all 8 views (navigate) + 5 quick actions (Ask AI, Simulate anomaly, Open playback, Export PDF, Run synthetic race). Fuzzy search, keyboard navigation (↑↓ + ↵), ESC to close. Shortcut hints at the bottom. `cmdKOpen` state in the Zustand store so the header button and the palette stay in sync.
+
+Styling polish:
+- Command palette: dark Dialog with cmdk Command, red-tinted aria-selected for nav items, amber-tinted for actions, kbd shortcut hints.
+- Header: new "Search ⌘K" button (border, mono, with kbd badge) next to Audit + AI Engineer.
+- Weather forecast: 6-slot grid with temp/wind/rain bars, color-coded DRY/RAIN?.
+- Simulate anomaly button: red outline with Zap icon.
+
+Verification:
+- `bun run lint`: 0 errors, 0 warnings.
+- agent-browser: all 8 views render with 0 runtime errors; Command Palette opens (Cmd+K + button); Audit Log drawer shows seeded + live entries; Simulate Anomaly triggers AI auto-diagnosis (LLM returns "progressive front-right tire overheating, lift and coast 50m earlier + ride height +1mm"); Weather forecast renders 6 slots.
+- Screenshots: download/screenshot-ai-anomaly-diagnosis.png, download/screenshot-weather-forecast.png.
+
+Stage Summary:
+- Platform now has 8 views + AI Race Engineer (proactive, auto-diagnoses anomalies, conversations persist) + Audit Log (auto-tracks all engineer actions) + Command Palette (Cmd+K) + Weather forecast. The Simulate Anomaly button makes the AI auto-trigger demoable on-demand. All features browser-verified and lint-clean.
+
+Unresolved / Next-phase recommendations:
+- Add skeleton loaders for async data fetching (currently data pops in).
+- Add animated number tickers (count-up) for KPI values.
+- Add page transition animations when switching views (framer-motion AnimatePresence).
+- The Audit Log could show a live "who's online" indicator and filter by actor.
+- The Command Palette could include recent searches / recently viewed sessions.

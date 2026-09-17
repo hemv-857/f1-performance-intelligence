@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTelemetrySocket } from '@/hooks/use-telemetry-socket'
-import { useAppStore } from '@/lib/store'
+import { useAppStore, logAudit } from '@/lib/store'
 import { SectionHeader, fmtLapTime, fmtDelta, StatusBadge, channelColor, TrackMap } from '@/components/shared'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -48,6 +48,16 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
+      const sessionLabel = sessions.find((s) => s.id === selectedSessionId)?.type ?? 'session'
+      logAudit(
+        'pdf_export',
+        'telemetry',
+        'engineer',
+        selectedSessionId,
+        `PDF report exported · ${sessionLabel}`,
+        'info',
+        { sizeKb: Math.round(blob.size / 1024) },
+      )
     } catch (e) {
       console.error('PDF export failed', e)
     } finally {
@@ -104,6 +114,23 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
       }
     }
   }, [liveTicks, mode, pushAnomaly])
+
+  // Manually inject an anomaly (for demo/testing the AI auto-trigger)
+  const simulateAnomaly = () => {
+    // pick a random channel to spike
+    const channels = ['tire_fl_temp', 'tire_fr_temp', 'boost_pressure', 'fuel_flow', 'rpm']
+    const ch = channels[Math.floor(Math.random() * channels.length)]
+    const range = getChannelRange(ch)
+    // generate an out-of-range value
+    const value = ch.startsWith('tire_') ? 118 + Math.random() * 4 : ch === 'boost_pressure' ? 3.9 + Math.random() * 0.2 : ch === 'fuel_flow' ? 107 + Math.random() * 3 : 12600 + Math.random() * 400
+    pushAnomaly({
+      channel: ch,
+      driverCode: 'TSU',
+      value,
+      range: range ?? { min: 0, max: 0 },
+      message: `SIMULATED: ${ch.replace(/_/g, ' ')} on TSU spiked to ${value.toFixed(ch.includes('temp') || ch.includes('pressure') ? 1 : 0)} — outside safe range ${range ? `[${range.min}, ${range.max}]` : ''}`,
+    })
+  }
 
   const liveSeries = useMemo(() => {
     const codes = socket.drivers.map((d) => d.code)
@@ -280,22 +307,32 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
 
           {/* live numeric channels grid — with anomaly detection */}
           <Card className="border-border/50 bg-card/60 p-3">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <div className="text-xs font-medium flex items-center gap-1.5">
                 <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
                 <span>Live channel anomaly detection</span>
               </div>
-              <span className="text-[10px] text-muted-foreground font-mono-nums">
-                {(() => {
-                  const anomalies = CHANNEL_GROUPS.flatMap((g) => g.channels).slice(0, 12).filter((c) => {
-                    const v = liveTicks['TSU']?.channels[c]
-                    return v != null && isAnomaly(c, v)
-                  })
-                  return anomalies.length === 0
-                    ? '✓ ALL CHANNELS NOMINAL'
-                    : `${anomalies.length} ANOMALY${anomalies.length > 1 ? 'S' : ''} DETECTED`
-                })()}
-              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[10px] border-red-500/40 text-red-300 hover:bg-red-500/10"
+                  onClick={simulateAnomaly}
+                >
+                  <Zap className="h-3 w-3 mr-1" /> Simulate anomaly
+                </Button>
+                <span className="text-[10px] text-muted-foreground font-mono-nums">
+                  {(() => {
+                    const anomalies = CHANNEL_GROUPS.flatMap((g) => g.channels).slice(0, 12).filter((c) => {
+                      const v = liveTicks['TSU']?.channels[c]
+                      return v != null && isAnomaly(c, v)
+                    })
+                    return anomalies.length === 0
+                      ? '✓ ALL CHANNELS NOMINAL'
+                      : `${anomalies.length} ANOMALY${anomalies.length > 1 ? 'S' : ''} DETECTED`
+                  })()}
+                </span>
+              </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {CHANNEL_GROUPS.flatMap((g) => g.channels).slice(0, 12).map((c) => {

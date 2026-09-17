@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTelemetrySocket } from '@/hooks/use-telemetry-socket'
 import { SectionHeader, StatCard, StatusBadge } from '@/components/shared'
 import { cn } from '@/lib/utils'
+import { logAudit } from '@/lib/store'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -64,11 +65,28 @@ export function RaceOpsView({ socket }: { socket: ReturnType<typeof useTelemetry
   const runPlaybook = (pb: typeof PLAYBOOKS[number]) => {
     socket.runPlaybook(pb.id)
     toast.info(`Executing playbook: ${pb.name}`, { description: pb.trigger })
+    logAudit(
+      'playbook_run',
+      'ops',
+      'strategist',
+      pb.id,
+      `${pb.name} — ${pb.trigger}`,
+      pb.color === 'red' ? 'critical' : pb.color === 'amber' ? 'warning' : 'success',
+      { playbook: pb.id },
+    )
   }
 
   const runSynthetic = () => {
     socket.runSyntheticRace()
     toast.info('Synthetic race simulation started', { description: 'Stress-testing all telemetry pipelines for 3s' })
+    logAudit(
+      'synthetic_race',
+      'ops',
+      'devops',
+      'pre-race health check',
+      'Synthetic race simulation started — stress-testing all telemetry pipelines for 3s',
+      'info',
+    )
   }
 
   // live consumer-lag sparkline (from socket pipeline updates)
@@ -448,6 +466,36 @@ function WeatherPanel() {
               <div className="text-[10px] text-muted-foreground mt-0.5">crosswind on S2 main straight</div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 30-min forecast strip */}
+      <div className="border-t border-border/40 px-4 py-3 bg-background/30">
+        <div className="flex items-center gap-2 mb-2">
+          <CloudSun className="h-3.5 w-3.5 text-amber-400" />
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums font-semibold">30-min forecast</span>
+          <span className="text-[10px] text-muted-foreground font-mono-nums ml-auto">confidence 87%</span>
+        </div>
+        <div className="grid grid-cols-6 gap-2">
+          {Array.from({ length: 6 }, (_, i) => {
+            const t = i * 5 // 0,5,10,15,20,25 min
+            const fAir = airTemp + Math.sin((now + t * 60) / 120) * 1.2 - t * 0.02
+            const fTrack = trackTemp + Math.sin((now + t * 60) / 90) * 2.5 - t * 0.04
+            const fWind = windSpeed + Math.sin((now + t * 60) / 60) * 1.5
+            const fRain = Math.min(35, Math.max(0, (humidity - 75) * 1.5 + t * 0.3))
+            return (
+              <div key={i} className="rounded-md border border-border/50 bg-card/40 p-2 text-center">
+                <div className="text-[9px] text-muted-foreground font-mono-nums">+{t}m</div>
+                <div className="mt-1 font-mono-nums text-sm font-bold text-amber-300">{fAir.toFixed(0)}°</div>
+                <div className="text-[9px] text-muted-foreground font-mono-nums">{fTrack.toFixed(0)}°T</div>
+                <div className="mt-0.5 text-[9px] font-mono-nums text-emerald-300">{fWind.toFixed(1)}m/s</div>
+                <div className="mt-0.5 h-1 rounded-full bg-zinc-800 overflow-hidden">
+                  <div className={cn('h-full', fRain > 20 ? 'bg-amber-500' : fRain > 10 ? 'bg-amber-500/50' : 'bg-emerald-500/40')} style={{ width: `${Math.min(100, fRain * 2)}%` }} />
+                </div>
+                <div className="text-[8px] text-muted-foreground font-mono-nums mt-0.5">{fRain > 20 ? 'RAIN?' : 'DRY'}</div>
+              </div>
+            )
+          })}
         </div>
       </div>
     </Card>

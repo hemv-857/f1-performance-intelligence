@@ -12,6 +12,8 @@ import { RaceOpsView } from '@/components/views/race-ops'
 import { PitBoxView } from '@/components/views/pitbox'
 import { StrategyView } from '@/components/views/strategy'
 import { AiEngineerPanel } from '@/components/ai-engineer-panel'
+import { AuditLogDrawer } from '@/components/audit-log-drawer'
+import { CommandPalette } from '@/components/command-palette'
 import {
   Activity,
   Gauge,
@@ -22,6 +24,7 @@ import {
   Radio,
   CircleDot,
   GitBranch,
+  Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -41,7 +44,7 @@ const NAV = [
 ] as const
 
 export function AppShell() {
-  const { activeView, setActiveView, sessions, setSessions, setSelectedSessionId, setSidebarOpen, sidebarOpen } = useAppStore()
+  const { activeView, setActiveView, sessions, setSessions, setSelectedSessionId, setSidebarOpen, sidebarOpen, setCmdKOpen } = useAppStore()
   const socket = useTelemetrySocket()
 
   // load sessions once
@@ -101,6 +104,14 @@ export function AppShell() {
           </div>
 
           <div className="md:hidden ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setCmdKOpen(true)}
+              className="p-1.5 rounded-md hover:bg-accent text-muted-foreground"
+              aria-label="Open command palette"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+            <AuditLogDrawer />
             <AiEngineerPanel />
             <LivePill connected={socket.connected} />
           </div>
@@ -110,6 +121,16 @@ export function AppShell() {
             <Badge variant="outline" className="font-mono-nums text-[10px] border-emerald-500/40 text-emerald-300">
               R2 · SINGAPORE
             </Badge>
+            <button
+              onClick={() => setCmdKOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-border/60 bg-card/50 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-red-500/40 transition-colors font-mono-nums"
+              aria-label="Open command palette (Cmd+K)"
+            >
+              <Search className="h-3 w-3" />
+              <span className="hidden lg:inline">Search</span>
+              <kbd className="hidden lg:inline text-[9px] border border-border/60 rounded px-1 py-0.5">⌘K</kbd>
+            </button>
+            <AuditLogDrawer />
             <AiEngineerPanel />
           </div>
         </div>
@@ -222,6 +243,9 @@ export function AppShell() {
 
       {/* Sonner toasts (used by race-ops / devops playbooks) */}
       <SonnerToaster theme="dark" position="bottom-right" richColors closeButton />
+
+      {/* Command palette (Cmd+K / Ctrl+K) */}
+      <CommandPalette />
     </div>
   )
 }
