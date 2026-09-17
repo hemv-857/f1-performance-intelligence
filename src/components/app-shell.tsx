@@ -17,7 +17,8 @@ import { AuditLogDrawer } from '@/components/audit-log-drawer'
 import { DataExportDrawer } from '@/components/data-export-drawer'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter, pushNotification } from '@/components/notification-center'
-import { DataExportSettingsDrawer } from '@/components/settings-drawer'
+import { DataExportSettingsDrawer, useSettingsEffect } from '@/components/settings-drawer'
+import { OnboardingTour } from '@/components/onboarding-tour'
 import {
   Activity,
   Gauge,
@@ -31,10 +32,11 @@ import {
   Search,
   Keyboard,
   X,
+  Share2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Toaster as SonnerToaster } from 'sonner'
+import { Toaster as SonnerToaster, toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import type { SessionSummary } from '@/lib/types'
@@ -51,7 +53,7 @@ const NAV = [
 ] as const
 
 export function AppShell() {
-  const { activeView, setActiveView, sessions, setSessions, setSelectedSessionId, setSidebarOpen, sidebarOpen, setCmdKOpen } = useAppStore()
+  const { activeView, setActiveView, sessions, setSessions, selectedSessionId, setSelectedSessionId, setSidebarOpen, sidebarOpen, setCmdKOpen } = useAppStore()
   const socket = useTelemetrySocket()
 
   // load sessions once
@@ -127,6 +129,41 @@ export function AppShell() {
     }
   }, [setActiveView])
 
+  // Apply settings to the document (compact density class)
+  const settings = useSettingsEffect()
+
+  // Share URL: read view + session from URL hash on mount, and update the hash on view/session change
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const hash = window.location.hash.slice(1)
+    if (hash) {
+      const params = new URLSearchParams(hash)
+      const view = params.get('v') as ViewKey | null
+      const sessionId = params.get('s')
+      if (view && ['overview', 'telemetry', 'builder', 'analytics', 'devops', 'raceops', 'pitbox', 'strategy'].includes(view)) {
+        setActiveView(view)
+      }
+      if (sessionId) {
+        setSelectedSessionId(sessionId)
+      }
+    }
+  }, [setActiveView, setSelectedSessionId])
+
+  // Update the URL hash whenever the view or session changes (debounced via rAF)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const raf = requestAnimationFrame(() => {
+      const params = new URLSearchParams()
+      params.set('v', activeView)
+      if (selectedSessionId) params.set('s', selectedSessionId)
+      const newHash = params.toString()
+      if (window.location.hash.slice(1) !== newHash) {
+        window.history.replaceState(null, '', `#${newHash}`)
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [activeView, selectedSessionId])
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* ===== Header ===== */}
@@ -170,6 +207,19 @@ export function AppShell() {
             >
               <Search className="h-4 w-4" />
             </button>
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(window.location.href).then(
+                  () => toast.success('Share link copied', { description: 'The current view + session URL is in your clipboard' }),
+                  () => toast.error('Could not copy URL')
+                )
+              }}
+              className="p-1.5 rounded-md hover:bg-accent text-muted-foreground"
+              aria-label="Share current view"
+              title="Share current view"
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
             <NotificationCenter />
             <DataExportDrawer />
             <AuditLogDrawer />
@@ -191,6 +241,20 @@ export function AppShell() {
               <Search className="h-3 w-3" />
               <span className="hidden lg:inline">Search</span>
               <kbd className="hidden lg:inline text-[9px] border border-border/60 rounded px-1 py-0.5">⌘K</kbd>
+            </button>
+            <button
+              onClick={() => {
+                navigator.clipboard?.writeText(window.location.href).then(
+                  () => toast.success('Share link copied', { description: 'The current view + session URL is in your clipboard' }),
+                  () => toast.error('Could not copy URL')
+                )
+              }}
+              className="flex items-center gap-1.5 rounded-md border border-border/60 bg-card/50 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:border-red-500/40 transition-colors font-mono-nums"
+              aria-label="Share current view"
+              title="Copy a shareable link to this view + session"
+            >
+              <Share2 className="h-3 w-3" />
+              <span className="hidden lg:inline">Share</span>
             </button>
             <DataExportDrawer />
             <AuditLogDrawer />
@@ -321,6 +385,9 @@ export function AppShell() {
 
       {/* Command palette (Cmd+K / Ctrl+K) */}
       <CommandPalette />
+
+      {/* First-visit onboarding walkthrough (manages its own visibility) */}
+      <OnboardingTour />
 
       {/* Keyboard shortcuts help dialog (? to toggle) */}
       {showShortcuts && (

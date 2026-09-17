@@ -111,6 +111,18 @@
   }
 }
 
+/* Compact density mode (toggled in Settings) */
+.compact-density {
+  font-size: 14px;
+}
+.compact-density .p-4 { padding: 0.625rem; }
+.compact-density .p-5 { padding: 0.875rem; }
+.compact-density .p-6 { padding: 1rem; }
+.compact-density .gap-4 { gap: 0.625rem; }
+.compact-density .text-2xl { font-size: 1.25rem; line-height: 1.5rem; }
+.compact-density .text-lg { font-size: 0.95rem; line-height: 1.35rem; }
+.compact-density .space-y-4 > * + * { margin-top: 0.625rem; }
+
 @layer utilities {
   .font-mono-nums {
     font-variant-numeric: tabular-nums;

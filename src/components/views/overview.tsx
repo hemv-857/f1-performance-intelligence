@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTelemetrySocket } from '@/hooks/use-telemetry-socket'
 import { useAppStore } from '@/lib/store'
 import { StatCard, SectionHeader, DriverChip, StatusBadge, TrackMap } from '@/components/shared'
+import { useSettings } from '@/components/settings-drawer'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -14,6 +15,7 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianG
 
 export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetrySocket> }) {
   const { sessions, selectedSessionId, setActiveView } = useAppStore()
+  const settings = useSettings()
 
   const healthQ = useQuery({
     queryKey: ['health'],
@@ -70,7 +72,8 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
             ))}
           </div>
         </div>
-        {/* Live ticker tape */}
+        {/* Live ticker tape (togglable in Settings) */}
+        {settings.showTicker && (
         <div className="relative border-t border-red-500/20 bg-black/20 overflow-hidden">
           <div className="flex ticker whitespace-nowrap py-1.5 text-[10px] font-mono-nums text-muted-foreground">
             {Array.from({ length: 2 }).map((_, dup) => (
@@ -95,6 +98,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
             ))}
           </div>
         </div>
+        )}
       </Card>
 
       {/* KPI row */}

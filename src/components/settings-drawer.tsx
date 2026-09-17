@@ -10,8 +10,9 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import {
   Settings, Bell, Volume2, Monitor, Trash2, CheckCircle2, Bot, Eye,
-  AlertTriangle, Info,
+  AlertTriangle, Info, RefreshCw,
 } from 'lucide-react'
+import { restartTour } from '@/components/onboarding-tour'
 
 interface SettingsState {
   soundEnabled: boolean
@@ -83,6 +84,20 @@ export function useSettings() {
 
 export function updateSettings(patch: Partial<SettingsState>) {
   settingsStore.update(patch)
+}
+
+/** Hook that applies global settings effects (compact-density class on <html>). Returns the settings. */
+export function useSettingsEffect(): SettingsState {
+  const s = useSettings()
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    if (s.compactDensity) {
+      document.documentElement.classList.add('compact-density')
+    } else {
+      document.documentElement.classList.remove('compact-density')
+    }
+  }, [s.compactDensity])
+  return s
 }
 
 export function DataExportSettingsDrawer() {
@@ -293,12 +308,25 @@ export function DataExportSettingsDrawer() {
 
             {/* About */}
             <section>
-              <div className="text-[10px] text-muted-foreground font-mono-nums space-y-1">
+              <div className="flex items-center gap-1.5 mb-3 text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums font-semibold">
+                <Info className="h-3.5 w-3.5" /> About
+              </div>
+              <div className="text-[10px] text-muted-foreground font-mono-nums space-y-1 mb-3">
                 <div className="flex justify-between"><span>Platform version</span><span className="text-foreground">v2.4.1</span></div>
                 <div className="flex justify-between"><span>Build</span><span className="text-foreground">round-9</span></div>
                 <div className="flex justify-between"><span>WebSocket</span><span className="text-emerald-400">connected</span></div>
                 <div className="flex justify-between"><span>Pipeline</span><span className="text-emerald-400">99.97% uptime</span></div>
               </div>
+              <button
+                onClick={() => { setOpen(false); restartTour() }}
+                className="w-full flex items-center justify-between rounded-md border border-border/50 bg-background/40 p-2.5 text-left hover:border-red-500/40 transition-colors"
+              >
+                <div>
+                  <div className="text-xs font-medium">Retake onboarding tour</div>
+                  <div className="text-[10px] text-muted-foreground">Replay the 5-step platform walkthrough</div>
+                </div>
+                <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
             </section>
           </div>
         </ScrollArea>

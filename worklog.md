@@ -800,3 +800,74 @@ Unresolved / Next-phase recommendations:
 - The Data Export Center could support custom SQL queries (type raw SQL → export results).
 - Add a "share" feature (generate a shareable URL for a specific view state).
 - Add export scheduling (auto-export a report after each session).
+
+---
+Task ID: feat-2 (onboarding)
+Agent: full-stack-developer (onboarding)
+Task: Build first-visit onboarding walkthrough
+
+Work Log:
+- Read worklog.md (rounds 7/8/9 — keyboard shortcuts, settings drawer, command palette, data export), app-shell.tsx (main shell), store.ts (Zustand — used localStorage directly per spec), settings-drawer.tsx (Sheet overlay pattern + About section), dialog.tsx/button.tsx (shadcn primitives), globals.css (confirmed `--primary` is racing red so default Button variant is red).
+- Created `/home/z/my-project/src/components/onboarding-tour.tsx` ('use client', ~290 lines) exporting `OnboardingTour` + `restartTour`:
+  * localStorage key `rb-onboarding-complete`; auto-starts after 1.5s if flag ≠ 'true' (SSR guard + try/catch).
+  * 5 steps: (1) Welcome — Trophy (amber) + Flag badge, platform overview (8 views / 1 kHz telemetry / AI engineer). (2) Live Telemetry — Gauge (emerald), 100+ channels @ 1 kHz Kafka+Spark. (3) AI Race Engineer — Bot (violet) + Sparkles badge, header Bot icon + auto-diagnose. (4) Keyboard Shortcuts — Keyboard (red), renders a 2-col kbd grid (g+o, g+t, ?, ⌘K). (5) Ready to race — CheckCircle2 (emerald), auto-diagnose/leaderboard/persisted prefs.
+  * Overlay: `fixed inset-0 z-[80] bg-black/80 backdrop-blur` + centered `max-w-md` card `bg-card/95 backdrop-blur-xl border-border/60`. Top red gradient accent line. Close (X) top-right.
+  * framer-motion `AnimatePresence mode="wait"` keyed on step, directional slide (x: ±24) + fade; direction tracked via state.
+  * Progress dots: 5 circles — current `w-6 bg-red-500`, completed `w-2 bg-red-500/50`, future `w-2 bg-zinc-700`.
+  * Nav row: "Skip tour" (ghost link, left) → completes; "Previous" (outline, steps 2-5, ChevronLeft); "Next"/"Start using the platform" (default red, ChevronRight / CheckCircle2). `ml-auto` pushes nav right on step 1.
+  * Completion (Next on 5 / Skip / X / Esc): sets localStorage flag, closes. Keyboard: Esc=complete, ArrowRight=next, ArrowLeft=prev. Body scroll-locked while open.
+  * `restartTour()`: clears flag, dispatches global `window.CustomEvent('rb-restart-onboarding')`, AND calls module-level `mountedRestart` ref (belt-and-suspenders for cross-chunk robustness). OnboardingTour registers both the ref and a window event listener on mount.
+  * All required lucide icons imported & used: Trophy, Gauge, Bot, Keyboard, CheckCircle2, X, ChevronRight, ChevronLeft, Sparkles, Flag.
+- Wired `OnboardingTour` into `app-shell.tsx`: import + `<OnboardingTour />` after `<CommandPalette />` (self-managing visibility).
+- Wired retake button into `settings-drawer.tsx`: added `RefreshCw` import + `import { restartTour } from '@/components/onboarding-tour'`; replaced bare About section with a headed "About" section (Info icon) containing version/build/websocket/pipeline stats + a full-width "Retake onboarding tour" button (RefreshCw) with onClick `() => { setOpen(false); restartTour() }`.
+- Ran `bun run lint`: 0 errors, 0 warnings. Dev server recompiled cleanly.
+- Verified end-to-end with agent-browser (gateway :81):
+  * Fresh browser (empty localStorage) → tour auto-started after ~1.5s, "Step 1 of 5 / Welcome to the Racing Bulls Performance Intelligence Platform" visible. Screenshot: feat-2-onboarding-step1.png.
+  * Clicked Next through steps 2 (Live Telemetry & Timing), 3 (AI Race Engineer), 4 (Keyboard Shortcuts — kbd grid rendered), 5 (Ready to race). Screenshots step2/3/4/5.png. Each step: correct title, "Step N of 5" counter, directional slide animation, Prev on steps 2-5, Next → "Start using the platform" on step 5.
+  * Clicked "Start using the platform" → localStorage = "true", dialog count = 0, tour removed from DOM. Completion verified.
+  * Reloaded with localStorage = "true" → tour did NOT auto-start. Suppression verified.
+  * Opened Settings → "Retake onboarding tour" button in About section. Screenshot: feat-2-onboarding-settings-about.png. Clicked (programmatic DOM click to bypass an agent-browser hit-testing quirk on the scrolled Sheet content) → localStorage cleared to null, drawer closed, tour reopened at Step 1. Screenshot: feat-2-onboarding-retake-restarted.png.
+  * Note: `agent-browser click @ref` intermittently missed the retake button inside the ScrollArea (hit the Sheet overlay, closing the drawer without invoking the handler). A programmatic `element.click()` confirmed the React onClick correctly calls `restartTour()`, clears the flag, and reopens the tour — wiring is correct; only the test tooling's coordinate click was unreliable.
+  * Final completed-platform screenshot: feat-2-onboarding-completed-platform.png.
+
+Stage Summary:
+- First-visit onboarding walkthrough is feature-complete and lint-clean. `OnboardingTour` (src/components/onboarding-tour.tsx) auto-starts a 5-step modal tour on first visit (localStorage `rb-onboarding-complete` ≠ true) with a dark carbon backdrop, framer-motion directional slide transitions, per-step colored icon circles (Trophy/Gauge/Bot/Keyboard/CheckCircle2 with Flag & Sparkles accent badges), a progress dot indicator, and Skip/Previous/Next nav. Completion (Next on 5, Skip, X, or Esc) persists the flag so the tour never auto-starts again. A "Retake onboarding tour" button in the Settings drawer's About section calls `restartTour()` which clears the flag and reopens the tour from step 1. Rendered from app-shell.tsx; self-managing visibility. All 5 steps, the completion path, suppression-on-reload, and retake-from-settings were browser-verified. Resolves the round-9 "add onboarding/first-visit walkthrough overlay" recommendation.
+
+---
+Task ID: round-10
+Agent: main (webDevReview cron)
+Task: QA pass + 3 new features (Settings wired to UI, Onboarding tour, Share URL) + styling polish
+
+Work Log:
+- QA via agent-browser (gateway :81): all 8 views render with ZERO runtime errors. Lint clean. Platform is stable.
+- Fixed a runtime ReferenceError: `selectedSessionId` was not destructured from the store in app-shell.tsx (caused by the Share URL feature using it). Added it to the destructure — app renders again.
+
+New features added:
+1. Settings toggles wired to UI (feat-1, main): the Settings panel now actually affects the UI:
+   - **showTicker**: the Overview ticker tape is now conditionally rendered based on `settings.showTicker`. Toggle it off in Settings → ticker disappears; on → it returns.
+   - **pulseAnomalies**: the Telemetry Viewer anomaly cards now check `settings.pulseAnomalies` — when off, anomalous channels still show red border + red text but the `pulse-red` animation is disabled (calmer).
+   - **compactDensity**: a new `useSettingsEffect` hook adds/removes a `compact-density` class on `<html>`. New CSS in globals.css reduces padding (p-4→0.625rem, p-5→0.875rem, p-6→1rem), font sizes (text-2xl→1.25rem, text-lg→0.95rem), and spacing (gap-4→0.625rem, space-y-4→0.625rem) when active. Toggle it on → the whole UI gets denser; off → back to normal.
+   - All settings persist to localStorage (`rb-settings`) and reactively update across all components via the `useSettings` hook.
+2. Onboarding/first-visit walkthrough (feat-2, subagent): new `src/components/onboarding-tour.tsx` — a 5-step modal overlay that auto-starts on first visit (checks localStorage `rb-onboarding-complete`). Steps: (1) Welcome with Trophy icon, (2) Live Telemetry with Gauge, (3) AI Race Engineer with Bot, (4) Keyboard Shortcuts with a kbd grid (g+o, g+t, ?, ⌘K), (5) Ready to race with CheckCircle2. framer-motion slide transitions, progress dots, Skip/Prev/Next buttons, Esc/arrow-key support. A "Retake onboarding tour" button in the Settings drawer (About section) clears the flag and restarts. Verified: auto-starts on first visit, click through all 5 steps, completes + sets localStorage, doesn't re-show on reload, retake works from Settings.
+3. Share view state via URL (feat-3, main): the app now syncs the current view + session to the URL hash (`#v=telemetry&s=cmu5...`). On mount, it reads the hash and restores the view + session. On view/session change, it updates the hash via `history.replaceState` (no page reload). A new "Share" button (Share2 icon) in the header (both desktop + mobile) copies the current URL to clipboard via `navigator.clipboard.writeText` + a sonner toast "Share link copied". Deep-linking works: opening `http://localhost:81/#v=analytics&s=cmu5...` jumps straight to the Analytics view with that session.
+
+Styling polish:
+- Compact density CSS: reduced padding/font/spacing globally when active.
+- Share button: bordered button with Share2 icon + "Share" label (desktop) / icon-only (mobile).
+- Onboarding: dark carbon modal with colored icon circles, progress dots, directional slide transitions.
+
+Verification:
+- `bun run lint`: 0 errors, 0 warnings.
+- agent-browser: all 8 views render with 0 runtime errors; Settings toggles work (ticker hides, pulse disables, compact density shrinks the UI); Onboarding auto-starts + completes + retakes; Share URL updates on view change (`#v=telemetry&s=...`) + Share button copies to clipboard.
+- Fixed: `selectedSessionId` missing from store destructure caused a ReferenceError on load.
+- Screenshots: download/screenshot-share-url.png.
+
+Stage Summary:
+- Platform now has Settings that actually affect the UI (ticker/pulse/compact-density), a first-visit onboarding tour (5 steps with retake option), and Share URL deep-linking (view+session in the URL hash + copy-to-clipboard button). All features browser-verified and lint-clean.
+
+Unresolved / Next-phase recommendations:
+- Wire the `soundEnabled` setting to actually mute the sonner toasts (currently the toggle is cosmetic).
+- Wire the `aiAutoDiagnose` + `anomalyAutoTrigger` settings to actually gate the AI auto-trigger behavior.
+- The Share URL could include the active Analytics tab + driver selection for deeper linking.
+- Add a QR code generator for the Share URL (for mobile pit-box access).
+- Add export scheduling (auto-export a report after each session completes).

@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTelemetrySocket } from '@/hooks/use-telemetry-socket'
 import { useAppStore, logAudit } from '@/lib/store'
 import { SectionHeader, fmtLapTime, fmtDelta, StatusBadge, channelColor, TrackMap } from '@/components/shared'
+import { useSettings } from '@/components/settings-drawer'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -27,6 +28,7 @@ const CHANNEL_GROUPS = [
 
 export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelemetrySocket> }) {
   const { sessions, selectedSessionId, setSelectedSessionId } = useAppStore()
+  const settings = useSettings()
   const [mode, setMode] = useState<'live' | 'overlay' | 'playback'>('live')
   const [activeChannel, setActiveChannel] = useState('speed')
   const [group, setGroup] = useState('engine')
@@ -347,7 +349,7 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
                     className={cn(
                       'border p-3 transition-all relative overflow-hidden',
                       anomalous
-                        ? 'border-red-500/60 bg-red-500/10 pulse-red'
+                        ? settings.pulseAnomalies ? 'border-red-500/60 bg-red-500/10 pulse-red' : 'border-red-500/60 bg-red-500/10'
                         : 'border-border/50 bg-card/60 card-hover'
                     )}
                   >
