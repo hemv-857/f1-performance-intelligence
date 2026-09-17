@@ -15,7 +15,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import {
   Line, LineChart, BarChart, Bar, Cell, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, ReferenceLine, Legend, Area, AreaChart, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
-import { Activity, Timer, TrendingDown, TrendingUp, Fuel, Database, GitCompare, Layers, Gauge, Zap, ChevronRight, MapPin, Wind, Flame, Flag, Target, Trophy, Swords, Car, Crosshair } from 'lucide-react'
+import { Activity, Timer, TrendingDown, TrendingUp, Fuel, Database, GitCompare, Layers, Gauge, Zap, ChevronRight, MapPin, Wind, Flame, Flag, Target, Trophy, Swords, Car, Crosshair, Columns2, ArrowUp, ArrowDown } from 'lucide-react'
 
 // (Cell import moved up)
 
@@ -205,6 +205,7 @@ export function AnalyticsView() {
           <TabsTrigger value="h2h" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Target className="h-3.5 w-3.5 mr-1.5" /> Head-to-Head</TabsTrigger>
           <TabsTrigger value="constructors" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Trophy className="h-3.5 w-3.5 mr-1.5" /> Constructors</TabsTrigger>
           <TabsTrigger value="deepdive" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Crosshair className="h-3.5 w-3.5 mr-1.5" /> Deep-Dive</TabsTrigger>
+          <TabsTrigger value="compare" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Columns2 className="h-3.5 w-3.5 mr-1.5" /> Session Compare</TabsTrigger>
         </TabsList>
 
         {/* ---- Delta-P ---- */}
@@ -433,6 +434,11 @@ export function AnalyticsView() {
         {/* ---- Driver Comparison Deep-Dive ---- */}
         <TabsContent value="deepdive" className="space-y-4">
           <DeepDiveTab ourDriverId={ourDriverId} rivalId={rivalId} ourDrivers={ourDrivers} rivals={rivals} selectedSessionId={selectedSessionId} circuitName={selectedSession?.circuit.name ?? 'Singapore'} />
+        </TabsContent>
+
+        {/* ---- Session Compare (A vs B) ---- */}
+        <TabsContent value="compare" className="space-y-4">
+          <SessionCompareTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -1309,5 +1315,423 @@ function ConsistencySparkline({
         <span style={{ color }}>{(std / 1000).toFixed(3)}s · {std.toFixed(0)}ms</span>
       </div>
     </div>
+  )
+}
+
+// ---- Session Compare tab: pick 2 sessions (A vs B) and compare best laps,
+// per-driver sector deltas, and a per-driver per-sector improvement matrix.
+// Owns its own useQuery fetches for both sessions (keyed separately from the
+// parent's sessionQ / DeepDiveTab's sessionQ) so react-query caches independently.
+function SessionCompareTab() {
+  const { sessions } = useAppStore()
+  // completed + live sessions are both selectable; scheduled is excluded.
+  const completedSessions = sessions.filter((s) => s.status !== 'scheduled')
+  const liveSessions = sessions.filter((s) => s.status === 'live')
+
+  const [sessionAId, setSessionAId] = useState<string | null>(null)
+  const [sessionBId, setSessionBId] = useState<string | null>(null)
+  // Default once: A = first completed, B = live (or second completed).
+  // Same guarded-set-state-in-render pattern as the parent AnalyticsView's
+  // ourDriverId/rivalId defaults — lint-clean (no useEffect).
+  if (!sessionAId && completedSessions[0]) setSessionAId(completedSessions[0].id)
+  if (!sessionBId) {
+    if (liveSessions[0]) setSessionBId(liveSessions[0].id)
+    else if (completedSessions[1]) setSessionBId(completedSessions[1].id)
+  }
+
+  // Fetch both sessions in parallel (each keyed with its ID so swapping A<->B
+  // doesn't refetch the data, just relabels it in the cache).
+  const sessionAQ = useQuery({
+    queryKey: ['session-compare', sessionAId],
+    enabled: !!sessionAId,
+    queryFn: async () => (fetch(`/api/sessions/${sessionAId}`)).then((r) => r.json()),
+  })
+  const sessionBQ = useQuery({
+    queryKey: ['session-compare', sessionBId],
+    enabled: !!sessionBId,
+    queryFn: async () => (fetch(`/api/sessions/${sessionBId}`)).then((r) => r.json()),
+  })
+
+  // Pull the SessionSummary metadata (circuit, date, temps, status) from the
+  // store so it's available instantly (no API round-trip) for the pickers.
+  const sessionAMeta = sessions.find((s) => s.id === sessionAId) ?? null
+  const sessionBMeta = sessions.find((s) => s.id === sessionBId) ?? null
+
+  const driversA: any[] = sessionAQ.data?.session?.drivers ?? []
+  const driversB: any[] = sessionBQ.data?.session?.drivers ?? []
+  const loading = sessionAQ.isLoading || sessionBQ.isLoading
+
+  // Best lap time for a driver (min lapTimeMs across valid laps).
+  const bestLapMs = (laps: any[]): number | null => {
+    const valid = laps.filter((l: any) => l.isValid)
+    if (valid.length === 0) return null
+    return Math.min(...valid.map((l: any) => l.lapTimeMs))
+  }
+  // Avg sector time across valid laps where the sector is non-null.
+  const avgSector = (laps: any[], idx: 1 | 2 | 3): number | null => {
+    const vals = laps
+      .filter((l: any) => l.isValid && l[`sector${idx}Ms`] != null)
+      .map((l: any) => l[`sector${idx}Ms`])
+    if (vals.length === 0) return null
+    return vals.reduce((s: number, v: number) => s + v, 0) / vals.length
+  }
+
+  // ---- Card 2 data: best-lap comparison table ----
+  // For each driver that appears in BOTH sessions, show best-A, best-B,
+  // delta = B - A (negative = improved), and improvement % = (A - B)/A * 100.
+  type BestRow = {
+    code: string
+    name: string
+    team: string
+    isRival: boolean
+    bestA: number
+    bestB: number
+    deltaMs: number
+    improvementPct: number
+  }
+  const bestRows: BestRow[] = []
+  for (const dA of driversA) {
+    const dB = driversB.find((d: any) => d.driver.code === dA.driver.code)
+    if (!dB) continue
+    const bestA = bestLapMs(dA.laps)
+    const bestB = bestLapMs(dB.laps)
+    if (bestA == null || bestB == null) continue
+    const deltaMs = bestB - bestA
+    const improvementPct = ((bestA - bestB) / bestA) * 100
+    bestRows.push({
+      code: dA.driver.code,
+      name: dA.driver.name,
+      team: dA.driver.team,
+      isRival: dA.driver.isRival,
+      bestA,
+      bestB,
+      deltaMs,
+      improvementPct,
+    })
+  }
+  // Sort by delta ascending: most negative first = biggest improvement on top.
+  bestRows.sort((a, b) => a.deltaMs - b.deltaMs)
+
+  // ---- Card 3 data: avg sector delta (B - A) for our 2 drivers (TSU, LAW) ----
+  const ourCodes = ['TSU', 'LAW']
+  const sectorData = [
+    { sector: 'S1', TSU: null as number | null, LAW: null as number | null },
+    { sector: 'S2', TSU: null as number | null, LAW: null as number | null },
+    { sector: 'S3', TSU: null as number | null, LAW: null as number | null },
+  ]
+  for (const code of ourCodes) {
+    const dA = driversA.find((d: any) => d.driver.code === code)
+    const dB = driversB.find((d: any) => d.driver.code === code)
+    for (let i = 1; i <= 3; i++) {
+      const aAvg = dA ? avgSector(dA.laps, i as 1 | 2 | 3) : null
+      const bAvg = dB ? avgSector(dB.laps, i as 1 | 2 | 3) : null
+      sectorData[i - 1][code as 'TSU' | 'LAW'] =
+        aAvg != null && bAvg != null ? Math.round(bAvg - aAvg) : null
+    }
+  }
+
+  // ---- Card 4 data: improvement matrix ----
+  // Rows = TSU, LAW, VER, NOR, LEC, RUS. Columns = S1, S2, S3, Lap.
+  // Each cell: avg sector delta (B - A) in ms, or best-lap delta for the Lap col.
+  const matrixDrivers = ['TSU', 'LAW', 'VER', 'NOR', 'LEC', 'RUS']
+  type MatrixRow = {
+    code: string
+    isRival: boolean
+    cells: { s1: number | null; s2: number | null; s3: number | null; lap: number | null }
+  }
+  const matrixRows: MatrixRow[] = matrixDrivers.map((code) => {
+    const dA = driversA.find((d: any) => d.driver.code === code)
+    const dB = driversB.find((d: any) => d.driver.code === code)
+    const isRival = dA?.driver.isRival ?? dB?.driver.isRival ?? true
+    const s1A = dA ? avgSector(dA.laps, 1) : null
+    const s1B = dB ? avgSector(dB.laps, 1) : null
+    const s2A = dA ? avgSector(dA.laps, 2) : null
+    const s2B = dB ? avgSector(dB.laps, 2) : null
+    const s3A = dA ? avgSector(dA.laps, 3) : null
+    const s3B = dB ? avgSector(dB.laps, 3) : null
+    const lapA = dA ? bestLapMs(dA.laps) : null
+    const lapB = dB ? bestLapMs(dB.laps) : null
+    return {
+      code,
+      isRival,
+      cells: {
+        s1: s1A != null && s1B != null ? Math.round(s1B - s1A) : null,
+        s2: s2A != null && s2B != null ? Math.round(s2B - s2A) : null,
+        s3: s3A != null && s3B != null ? Math.round(s3B - s3A) : null,
+        lap: lapA != null && lapB != null ? Math.round(lapB - lapA) : null,
+      },
+    }
+  })
+
+  // Footer counters across all driver-sectors (excluding nulls).
+  let improvements = 0
+  let regressions = 0
+  let totalCells = 0
+  for (const row of matrixRows) {
+    for (const v of [row.cells.s1, row.cells.s2, row.cells.s3, row.cells.lap]) {
+      if (v == null) continue
+      totalCells++
+      if (v < 0) improvements++
+      else if (v > 0) regressions++
+    }
+  }
+
+  // Cell tint helper for the matrix: red = slower (positive delta),
+  // emerald = improved (negative delta), zinc = neutral / no data.
+  const cellTint = (v: number | null) => {
+    if (v == null) return 'bg-zinc-800/40 text-zinc-500'
+    if (v > 0) return 'bg-red-500/20 text-red-300'
+    if (v < 0) return 'bg-emerald-500/20 text-emerald-300'
+    return 'bg-zinc-700/30 text-zinc-400'
+  }
+
+  return (
+    <>
+      {/* 1) Session pickers — A (red) vs B (amber) with VS divider */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Session Comparison"
+          subtitle="Pick two sessions to compare head-to-head (e.g. Friday FP2 vs Saturday Qualifying)"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-red-500/40 text-red-300">
+              <Columns2 className="h-3 w-3 mr-1" /> {completedSessions.length} SESSIONS
+            </Badge>
+          }
+        />
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-stretch">
+          {/* Session A */}
+          <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="h-2 w-2 rounded-full" style={{ background: '#f87171' }} />
+              <span className="text-xs font-bold uppercase tracking-wider text-red-300 font-mono-nums">Session A</span>
+            </div>
+            <Select value={sessionAId ?? ''} onValueChange={setSessionAId}>
+              <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Session A" /></SelectTrigger>
+              <SelectContent>
+                {completedSessions.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>R{s.round} · {s.circuit.name} · {s.type}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {sessionAMeta && (
+              <div className="mt-3 space-y-1.5 text-xs font-mono-nums">
+                <div className="font-semibold text-foreground">{sessionAMeta.circuit.name}</div>
+                <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
+                  <span>{new Date(sessionAMeta.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                  <SessionBadge type={sessionAMeta.type} />
+                  <StatusBadge status={sessionAMeta.status} />
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1"><Wind className="h-3 w-3" /> Air {sessionAMeta.airTemp != null ? `${sessionAMeta.airTemp}°C` : '—'}</span>
+                  <span className="flex items-center gap-1"><Flame className="h-3 w-3" /> Track {sessionAMeta.trackTemp != null ? `${sessionAMeta.trackTemp}°C` : '—'}</span>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* VS divider (desktop) */}
+          <div className="hidden md:flex items-center justify-center px-2">
+            <div className="text-2xl font-bold text-red-400 font-mono-nums">VS</div>
+          </div>
+          {/* Session B */}
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="h-2 w-2 rounded-full" style={{ background: '#fbbf24' }} />
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-300 font-mono-nums">Session B</span>
+            </div>
+            <Select value={sessionBId ?? ''} onValueChange={setSessionBId}>
+              <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Session B" /></SelectTrigger>
+              <SelectContent>
+                {completedSessions.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>R{s.round} · {s.circuit.name} · {s.type}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {sessionBMeta && (
+              <div className="mt-3 space-y-1.5 text-xs font-mono-nums">
+                <div className="font-semibold text-foreground">{sessionBMeta.circuit.name}</div>
+                <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
+                  <span>{new Date(sessionBMeta.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                  <SessionBadge type={sessionBMeta.type} />
+                  <StatusBadge status={sessionBMeta.status} />
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-1"><Wind className="h-3 w-3" /> Air {sessionBMeta.airTemp != null ? `${sessionBMeta.airTemp}°C` : '—'}</span>
+                  <span className="flex items-center gap-1"><Flame className="h-3 w-3" /> Track {sessionBMeta.trackTemp != null ? `${sessionBMeta.trackTemp}°C` : '—'}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* VS divider (mobile, stacked) */}
+        <div className="md:hidden flex items-center justify-center py-1">
+          <div className="text-xl font-bold text-red-400 font-mono-nums">VS</div>
+        </div>
+      </Card>
+
+      {/* 2) Best Lap Comparison table */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Best Lap Comparison"
+          subtitle="Driver-by-driver best times: Session A vs Session B"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-amber-500/40 text-amber-300">
+              <Timer className="h-3 w-3 mr-1" /> {bestRows.length} DRIVERS
+            </Badge>
+          }
+        />
+        {loading ? (
+          <SkeletonTable rows={6} cols={5} />
+        ) : bestRows.length === 0 ? (
+          <div className="text-center py-8 text-sm text-muted-foreground">No drivers appear in both selected sessions.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono-nums">
+              <thead>
+                <tr className="text-[10px] uppercase text-muted-foreground border-b border-border/60">
+                  <th className="text-left font-medium px-3 py-2">Driver</th>
+                  <th className="text-left font-medium px-3 py-2 hidden sm:table-cell">Team</th>
+                  <th className="text-right font-medium px-3 py-2">Session A</th>
+                  <th className="text-right font-medium px-3 py-2">Session B</th>
+                  <th className="text-right font-medium px-3 py-2">Δ (B−A)</th>
+                  <th className="text-right font-medium px-3 py-2">Improv.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bestRows.map((r) => {
+                  const improved = r.deltaMs < 0
+                  const isOurs = !r.isRival
+                  return (
+                    <tr key={r.code} className={cn('border-b border-border/30 transition-colors hover:bg-red-500/5', isOurs && 'bg-red-500/10 ring-1 ring-inset ring-red-500/30')}>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col">
+                          <span className={cn('font-bold', isOurs ? 'text-red-300' : 'text-amber-300')}>{r.code}</span>
+                          <span className="text-[10px] text-muted-foreground">{r.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">{r.team}</td>
+                      <td className="px-3 py-2 text-right">{fmtLapTime(r.bestA)}</td>
+                      <td className="px-3 py-2 text-right">{fmtLapTime(r.bestB)}</td>
+                      <td className={cn('px-3 py-2 text-right font-bold', improved ? 'text-emerald-300' : 'text-red-300')}>
+                        <span className="inline-flex items-center gap-1 justify-end">
+                          {improved ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />}
+                          {fmtDelta(r.deltaMs)}s
+                        </span>
+                      </td>
+                      <td className={cn('px-3 py-2 text-right font-bold', improved ? 'text-emerald-300' : 'text-red-300')}>
+                        {r.improvementPct > 0 ? '+' : ''}{r.improvementPct.toFixed(2)}%
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="mt-2 px-3 text-[10px] text-muted-foreground font-mono-nums">
+          Δ = Session B best − Session A best. <span className="text-emerald-300">Negative = improved</span> · <span className="text-red-300">positive = slower</span>. Our drivers highlighted in red.
+        </div>
+      </Card>
+
+      {/* 3) Sector Improvement chart (TSU red + LAW orange, with y=0 reference) */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Sector Improvement"
+          subtitle="Avg sector time change Session A → B (negative = improved)"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-emerald-500/40 text-emerald-300">
+              <GitCompare className="h-3 w-3 mr-1" /> 3 SECTORS
+            </Badge>
+          }
+        />
+        {loading ? (
+          <SkeletonChart height={280} />
+        ) : (
+          <div className="h-[280px] px-2 pb-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={sectorData} margin={{ top: 16, right: 16, left: -8, bottom: 0 }}>
+                <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+                <XAxis dataKey="sector" tick={{ fontSize: 11, fill: '#a1a1aa' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} unit="ms" />
+                <ReferenceLine y={0} stroke="#52525b" strokeDasharray="2 2" />
+                <Tooltip
+                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: '#a1a1aa' }}
+                  labelFormatter={(v) => `${v}`}
+                  formatter={(v: any, n: any) => [v == null ? '—' : `${v} ms`, n]}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="TSU" name="TSU" fill="#f87171" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="LAW" name="LAW" fill="#fb923c" radius={[3, 3, 0, 0]} isAnimationActive={false} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
+
+      {/* 4) Improvement Matrix — per-driver × per-sector deltas with arrows */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Improvement Matrix"
+          subtitle="Per-driver, per-sector: did we improve from A to B?"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-red-500/40 text-red-300">
+              <Crosshair className="h-3 w-3 mr-1" /> {matrixDrivers.length} DRIVERS
+            </Badge>
+          }
+        />
+        {loading ? (
+          <SkeletonTable rows={6} cols={5} />
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs font-mono-nums border-collapse">
+                <thead>
+                  <tr className="text-[10px] uppercase text-muted-foreground border-b border-border/60">
+                    <th className="text-left font-medium px-3 py-2">Driver</th>
+                    <th className="text-center font-medium px-3 py-2">S1</th>
+                    <th className="text-center font-medium px-3 py-2">S2</th>
+                    <th className="text-center font-medium px-3 py-2">S3</th>
+                    <th className="text-center font-medium px-3 py-2">Lap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matrixRows.map((row) => (
+                    <tr key={row.code} className="border-b border-border/30">
+                      <td className="px-3 py-2">
+                        <span className={cn('font-bold', row.isRival ? 'text-amber-300' : 'text-red-300')}>{row.code}</span>
+                      </td>
+                      {(['s1', 's2', 's3', 'lap'] as const).map((k) => {
+                        const v = row.cells[k]
+                        return (
+                          <td key={k} className="px-2 py-2 text-center">
+                            <div className={cn('inline-flex items-center gap-1 justify-center min-w-[5.5rem] rounded-md px-2 py-1.5 text-xs font-bold', cellTint(v))}>
+                              {v == null ? (
+                                <span className="text-muted-foreground/60">—</span>
+                              ) : (
+                                <>
+                                  {v > 0 ? <ArrowUp className="h-3 w-3" /> : v < 0 ? <ArrowDown className="h-3 w-3" /> : null}
+                                  <span>{v > 0 ? '+' : ''}{v}ms</span>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 px-3 py-2 text-[10px] text-muted-foreground font-mono-nums border-t border-border/60 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="text-emerald-300"><TrendingDown className="inline h-3 w-3 mr-1" />Overall: {improvements} improvements</span>
+              <span className="text-border">/</span>
+              <span className="text-red-300"><TrendingUp className="inline h-3 w-3 mr-1" />{regressions} regressions</span>
+              <span className="text-border">·</span>
+              <span>across {totalCells} driver-sectors</span>
+            </div>
+          </>
+        )}
+      </Card>
+    </>
   )
 }

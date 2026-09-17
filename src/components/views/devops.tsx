@@ -43,6 +43,7 @@ import {
   Download,
   Terminal,
   Box,
+  Trophy,
 } from 'lucide-react'
 
 // ---- API types ----
@@ -825,6 +826,9 @@ export function DevOpsView() {
       {/* Section 7: Pipeline artifacts (IaC / CI YAML viewer) */}
       <PipelineArtifactsCard />
 
+      {/* Section 8: Engineer Leaderboard */}
+      <EngineerLeaderboard />
+
       {/* Sonner toaster scoped to this view (self-contained) */}
       <SonnerToaster
         position="bottom-right"
@@ -1488,3 +1492,71 @@ function PipelineArtifactsCard() {
   )
 }
 
+
+// ---- Engineer Leaderboard (gamification: who caught the most anomalies, ran the most playbooks) ----
+function EngineerLeaderboard() {
+  const q = useQuery({
+    queryKey: ['leaderboard'],
+    refetchInterval: 20000,
+    queryFn: async () => (fetch('/api/leaderboard').then((r) => r.json())),
+  })
+
+  const rows = (q.data?.leaderboard ?? []) as any[]
+
+  return (
+    <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+      <SectionHeader
+        title="Engineer Leaderboard"
+        subtitle="Gamified activity feed · anomalies caught · playbooks run · AI queries"
+        right={
+          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-300 font-mono-nums text-[10px]">
+            <Trophy className="h-3 w-3 mr-1" /> {q.data?.totalActions ?? 0} ACTIONS
+          </Badge>
+        }
+      />
+      {q.isLoading ? (
+        <div className="text-center py-8 text-sm text-muted-foreground font-mono-nums">loading leaderboard…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-center py-8 text-sm text-muted-foreground">
+          No engineer activity yet. Run a playbook, diagnose an anomaly, or export a report to appear here.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r, i) => {
+            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null
+            return (
+              <div
+                key={r.actor}
+                className={cn(
+                  'flex items-center gap-3 rounded-lg border p-3 transition-colors',
+                  i === 0 ? 'border-amber-500/40 bg-amber-500/5' : 'border-border/50 bg-background/40 hover:bg-accent/50'
+                )}
+              >
+                <div className="flex items-center justify-center h-8 w-8 rounded-full bg-card/80 border border-border/60 shrink-0">
+                  {medal ? <span className="text-base">{medal}</span> : <span className="font-mono-nums text-xs font-bold text-muted-foreground">{i + 1}</span>}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold font-mono-nums uppercase">{r.actor}</span>
+                    {i === 0 && <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-[9px] font-mono-nums">TOP ENGINEER</Badge>}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 text-[10px] text-muted-foreground font-mono-nums flex-wrap">
+                    {r.anomaliesCaught > 0 && <span className="text-red-400">🚨 {r.anomaliesCaught} anomalies</span>}
+                    {r.playbooksRun > 0 && <span className="text-amber-400">⚡ {r.playbooksRun} playbook{r.playbooksRun > 1 ? 's' : ''}</span>}
+                    {r.deploysPromoted > 0 && <span className="text-emerald-400">↑ {r.deploysPromoted} promote{r.deploysPromoted > 1 ? 's' : ''}</span>}
+                    {r.aiQueries > 0 && <span className="text-zinc-400">🤖 {r.aiQueries} AI</span>}
+                    {r.exports > 0 && <span>📄 {r.exports} export{r.exports > 1 ? 's' : ''}</span>}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-mono-nums text-lg font-bold text-amber-300">{r.score}</div>
+                  <div className="text-[9px] text-muted-foreground font-mono-nums">SCORE</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Card>
+  )
+}

@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import {
-  Bell, BellRing, AlertTriangle, CheckCircle2, Info, X, Trash2, Volume2, VolumeX,
+  Bell, BellRing, AlertTriangle, CheckCircle2, Info, X, Trash2, Volume2, VolumeX, Monitor,
 } from 'lucide-react'
 
 export interface Notification {
@@ -25,9 +25,47 @@ export interface Notification {
 // We avoid reassigning module-level bindings (react-hooks/globals + immutability)
 // by mutating a single array in place via splice/unshift.
 type Listener = (n: Notification[]) => void
+const STORAGE_KEY = 'rb-notifications'
 const state = {
   list: [] as Notification[],
   listeners: [] as Listener[],
+  initialized: false,
+  desktopEnabled: false,
+}
+
+// hydrate from localStorage on first module load
+function hydrate() {
+  if (state.initialized || typeof window === 'undefined') return
+  state.initialized = true
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved) as Notification[]
+      if (Array.isArray(parsed)) {
+        state.list.push(...parsed.slice(0, 50))
+      }
+    }
+  } catch { /* ignore */ }
+  // check desktop notification permission
+  if ('Notification' in window) {
+    state.desktopEnabled = Notification.permission === 'granted'
+  }
+}
+
+function persist() {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.list.slice(0, 50)))
+  } catch { /* ignore quota */ }
+}
+
+function fireDesktop(n: Notification) {
+  if (typeof window === 'undefined' || !('Notification' in window)) return
+  if (Notification.permission !== 'granted') return
+  try {
+    const icon = n.severity === 'critical' ? '🚨' : n.severity === 'warning' ? '⚠️' : n.severity === 'success' ? '✅' : 'ℹ️'
+    new Notification(`${icon} ${n.title}`, { body: n.message, tag: n.id, silent: n.severity === 'info' })
+  } catch { /* ignore */ }
 }
 
 function emit() {
@@ -35,6 +73,7 @@ function emit() {
 }
 
 export function pushNotification(n: Omit<Notification, 'id' | 'ts' | 'read'>): void {
+  hydrate()
   const full: Notification = {
     ...n,
     id: `${n.source}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -44,6 +83,8 @@ export function pushNotification(n: Omit<Notification, 'id' | 'ts' | 'read'>): v
   state.list.unshift(full)
   if (state.list.length > 50) state.list.length = 50
   emit()
+  persist()
+  fireDesktop(full)
   // also fire a sonner toast for immediate feedback
   try {
     import('sonner').then(({ toast }) => {
@@ -56,8 +97,27 @@ export function pushNotification(n: Omit<Notification, 'id' | 'ts' | 'read'>): v
   } catch { /* ignore */ }
 }
 
+/** Request browser desktop notification permission. Returns the resulting permission state. */
+export async function requestDesktopPermission(): Promise<NotificationPermission | 'unsupported'> {
+  if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported'
+  if (Notification.permission === 'granted') {
+    state.desktopEnabled = true
+    return 'granted'
+  }
+  try {
+    const result = await Notification.requestPermission()
+    state.desktopEnabled = result === 'granted'
+    return result
+  } catch {
+    return 'denied'
+  }
+}
+
 export function useNotifications() {
-  const [list, setList] = useState<Notification[]>(() => [...state.list])
+  const [list, setList] = useState<Notification[]>(() => {
+    hydrate()
+    return [...state.list]
+  })
   useEffect(() => {
     const l: Listener = (n) => {
       // schedule outside render phase to satisfy lint
@@ -100,17 +160,27 @@ export function NotificationCenter() {
   const markAllRead = () => {
     for (let i = 0; i < state.list.length; i++) state.list[i] = { ...state.list[i], read: true }
     emit()
+    persist()
   }
 
   const clearAll = () => {
     state.list.length = 0
     emit()
+    persist()
   }
 
   const remove = (id: string) => {
     const i = state.list.findIndex((n) => n.id === id)
     if (i >= 0) state.list.splice(i, 1)
     emit()
+    persist()
+  }
+
+  const enableDesktop = async () => {
+    const result = await requestDesktopPermission()
+    if (result === 'granted') {
+      pushNotification({ title: 'Desktop alerts enabled', message: 'Critical anomalies will now appear as desktop notifications even when the tab is backgrounded.', severity: 'success', source: 'system' })
+    }
   }
 
   return (
@@ -144,6 +214,9 @@ export function NotificationCenter() {
               </div>
             </SheetTitle>
             <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground hover:text-red-300" onClick={enableDesktop} title="Enable browser desktop notifications">
+                <Monitor className="h-3.5 w-3.5" />
+              </Button>
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSoundOn((s) => !s)} title={soundOn ? 'Sound on' : 'Sound off'}>
                 {soundOn ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
               </Button>
