@@ -10,10 +10,11 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import {
   Line, LineChart, BarChart, Bar, Cell, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, ReferenceLine, Legend, Area, AreaChart, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
-import { Activity, Timer, TrendingDown, Fuel, Database, GitCompare, Layers, Gauge, Zap, ChevronRight, MapPin, Wind, Flame, Flag, Target, Trophy } from 'lucide-react'
+import { Activity, Timer, TrendingDown, TrendingUp, Fuel, Database, GitCompare, Layers, Gauge, Zap, ChevronRight, MapPin, Wind, Flame, Flag, Target, Trophy, Swords, Car } from 'lucide-react'
 
 // (Cell import moved up)
 
@@ -201,6 +202,7 @@ export function AnalyticsView() {
           <TabsTrigger value="fuel" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Fuel className="h-3.5 w-3.5 mr-1.5" /> Fuel Trends</TabsTrigger>
           <TabsTrigger value="replay" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Layers className="h-3.5 w-3.5 mr-1.5" /> Qualifying Replay</TabsTrigger>
           <TabsTrigger value="h2h" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Target className="h-3.5 w-3.5 mr-1.5" /> Head-to-Head</TabsTrigger>
+          <TabsTrigger value="constructors" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Trophy className="h-3.5 w-3.5 mr-1.5" /> Constructors</TabsTrigger>
         </TabsList>
 
         {/* ---- Delta-P ---- */}
@@ -420,6 +422,11 @@ export function AnalyticsView() {
         <TabsContent value="h2h" className="space-y-4">
           <HeadToHeadTab ourDriverId={ourDriverId} rivalId={rivalId} ourDrivers={ourDrivers} rivals={rivals} deltaQ={deltaQ} degQ={degQ} fuelQ={fuelQ} />
         </TabsContent>
+
+        {/* ---- Constructors Championship ---- */}
+        <TabsContent value="constructors" className="space-y-4">
+          <ConstructorsTab />
+        </TabsContent>
       </Tabs>
     </div>
   )
@@ -601,6 +608,268 @@ function HeadToHeadTab({
         </div>
       </Card>
     </div>
+  )
+}
+
+// ---- Constructors Championship tab: standings + progression + battle matrix ----
+function ConstructorsTab() {
+  const teams = [
+    { pos: 1, name: 'Red Bull Racing', car: 'RB21', pts: 729, wins: 11, podiums: 24, poles: 9, form: [1, 2, 1, 1, 3], color: '#f87171', isOurs: false },
+    { pos: 2, name: 'McLaren', car: 'MCL39', pts: 658, wins: 6, podiums: 19, poles: 4, form: [2, 1, 3, 2, 1], color: '#fbbf24', isOurs: false },
+    { pos: 3, name: 'Ferrari', car: 'SF-25', pts: 612, wins: 4, podiums: 15, poles: 2, form: [3, 3, 2, 4, 2], color: '#34d399', isOurs: false },
+    { pos: 4, name: 'Mercedes', car: 'W16', pts: 534, wins: 2, podiums: 12, poles: 1, form: [4, 5, 4, 3, 5], color: '#fb923c', isOurs: false },
+    { pos: 5, name: 'Racing Bulls', car: 'VCARB 02', pts: 302, wins: 0, podiums: 2, poles: 0, form: [6, 5, 6, 5, 4], color: '#fb7185', isOurs: true },
+  ]
+
+  // Cumulative constructors' points over 16 rounds. Monotonically increasing;
+  // round-16 values match the standings table above.
+  const progression = [
+    { round: 1,  redBull: 44,  mcLaren: 38,  ferrari: 35,  mercedes: 30,  racingBulls: 16 },
+    { round: 2,  redBull: 88,  mcLaren: 78,  ferrari: 72,  mercedes: 62,  racingBulls: 32 },
+    { round: 3,  redBull: 135, mcLaren: 120, ferrari: 110, mercedes: 95,  racingBulls: 50 },
+    { round: 4,  redBull: 178, mcLaren: 162, ferrari: 145, mercedes: 128, racingBulls: 68 },
+    { round: 5,  redBull: 225, mcLaren: 200, ferrari: 180, mercedes: 158, racingBulls: 85 },
+    { round: 6,  redBull: 270, mcLaren: 240, ferrari: 218, mercedes: 188, racingBulls: 102 },
+    { round: 7,  redBull: 318, mcLaren: 282, ferrari: 252, mercedes: 220, racingBulls: 122 },
+    { round: 8,  redBull: 363, mcLaren: 322, ferrari: 290, mercedes: 252, racingBulls: 142 },
+    { round: 9,  redBull: 412, mcLaren: 365, ferrari: 325, mercedes: 282, racingBulls: 162 },
+    { round: 10, redBull: 458, mcLaren: 405, ferrari: 360, mercedes: 312, racingBulls: 182 },
+    { round: 11, redBull: 505, mcLaren: 445, ferrari: 398, mercedes: 345, racingBulls: 202 },
+    { round: 12, redBull: 553, mcLaren: 488, ferrari: 432, mercedes: 375, racingBulls: 222 },
+    { round: 13, redBull: 600, mcLaren: 528, ferrari: 468, mercedes: 410, racingBulls: 242 },
+    { round: 14, redBull: 638, mcLaren: 568, ferrari: 502, mercedes: 442, racingBulls: 258 },
+    { round: 15, redBull: 685, mcLaren: 612, ferrari: 558, mercedes: 488, racingBulls: 280 },
+    { round: 16, redBull: 729, mcLaren: 658, ferrari: 612, mercedes: 534, racingBulls: 302 },
+  ]
+
+  // Battle matrix — Racing Bulls vs each rival over the last 4 rounds.
+  // Each cell = our points that round − their points that round.
+  const rivals = [
+    { key: 'rb',  code: 'RBR', name: 'Red Bull', color: '#f87171' },
+    { key: 'mcl', code: 'MCL', name: 'McLaren',  color: '#fbbf24' },
+    { key: 'fer', code: 'FER', name: 'Ferrari',  color: '#34d399' },
+    { key: 'mer', code: 'MER', name: 'Mercedes', color: '#fb923c' },
+  ] as const
+  type RivalKey = typeof rivals[number]['key']
+  const battleRows: { round: string; rb: number; mcl: number; fer: number; mer: number }[] = [
+    { round: 'R13', rb: -4, mcl: -1, fer:  1, mer:  4 },
+    { round: 'R14', rb: -4, mcl:  1, fer:  2, mer:  6 },
+    { round: 'R15', rb: -4, mcl: -3, fer: -8, mer: -6 },
+    { round: 'R16', rb: -2, mcl:  2, fer:  8, mer:  6 },
+  ]
+  const battleTotal: Record<RivalKey, number> = {
+    rb:  battleRows.reduce((s, r) => s + r.rb, 0),
+    mcl: battleRows.reduce((s, r) => s + r.mcl, 0),
+    fer: battleRows.reduce((s, r) => s + r.fer, 0),
+    mer: battleRows.reduce((s, r) => s + r.mer, 0),
+  }
+
+  // Form dot color: green=win, amber=podium, zinc=points, rose=DNF/none
+  const formDot = (pos: number) =>
+    pos === 1   ? 'bg-emerald-500'
+    : pos <= 3  ? 'bg-amber-500'
+    : pos <= 10 ? 'bg-zinc-500'
+    : 'bg-rose-500'
+  const formLabel = (pos: number) => (pos > 10 ? 'DNF' : `P${pos}`)
+
+  return (
+    <>
+      {/* 1) Constructors Standings */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Constructors Standings"
+          subtitle="2025 F1 Team Championship"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-red-500/40 text-red-300">
+              <Trophy className="h-3 w-3 mr-1" /> ROUND 16 / 22
+            </Badge>
+          }
+        />
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="text-[10px] uppercase tracking-wider text-muted-foreground border-border/60">
+                <TableHead className="w-8 text-left font-medium">Pos</TableHead>
+                <TableHead className="text-left font-medium">Team</TableHead>
+                <TableHead className="text-left font-medium">Car</TableHead>
+                <TableHead className="text-right font-medium">Pts</TableHead>
+                <TableHead className="text-center font-medium">Wins</TableHead>
+                <TableHead className="text-center font-medium hidden sm:table-cell">Podiums</TableHead>
+                <TableHead className="text-center font-medium hidden md:table-cell">Poles</TableHead>
+                <TableHead className="text-center font-medium">Form</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="font-mono-nums">
+              {teams.map((t) => (
+                <TableRow
+                  key={t.name}
+                  className={cn(
+                    'border-border/30 transition-colors hover:bg-red-500/5',
+                    t.isOurs && 'bg-red-500/10 ring-1 ring-inset ring-red-500/30',
+                  )}
+                >
+                  <TableCell className="font-bold text-muted-foreground">{t.pos}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ background: t.color }} />
+                      <span className={cn('font-semibold', t.isOurs ? 'text-red-300' : 'text-foreground')}>
+                        {t.name}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="font-mono-nums text-[10px] border-border/60 text-muted-foreground">
+                      <Car className="h-3 w-3 mr-1" />{t.car}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right font-bold text-base">{t.pts}</TableCell>
+                  <TableCell className="text-center">{t.wins}</TableCell>
+                  <TableCell className="text-center hidden sm:table-cell">{t.podiums}</TableCell>
+                  <TableCell className="text-center hidden md:table-cell">{t.poles}</TableCell>
+                  <TableCell className="text-center">
+                    <div className="inline-flex items-center gap-1">
+                      {t.form.map((p, i) => (
+                        <span
+                          key={i}
+                          title={formLabel(p)}
+                          className={cn('h-2 w-2 rounded-full transition-transform hover:scale-125', formDot(p))}
+                        />
+                      ))}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="mt-3 px-3 py-2 text-[10px] text-muted-foreground font-mono-nums border-t border-border/60 flex flex-wrap gap-x-3 gap-y-1">
+          <span className="text-red-300">OUR TEAM: P5 302pts</span>
+          <span className="text-border">·</span>
+          <span>GAP TO P4: <span className="text-amber-300">232pts</span></span>
+          <span className="text-border">·</span>
+          <span>6 ROUNDS REMAINING</span>
+        </div>
+      </Card>
+
+      {/* 2) Points progression chart */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Points Progression"
+          subtitle="Cumulative constructors' points · rounds 1–16"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-amber-500/40 text-amber-300">
+              <TrendingUp className="h-3 w-3 mr-1" /> 5 TEAMS
+            </Badge>
+          }
+        />
+        <div className="h-[340px] w-full px-2 pb-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={progression} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}>
+              <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+              <XAxis dataKey="round" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} unit="R" />
+              <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: '#a1a1aa' }}
+                labelFormatter={(v) => `Round ${v}`}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <ReferenceLine x={16} stroke="#f87171" strokeDasharray="4 4" label={{ value: 'NOW', position: 'top', fill: '#f87171', fontSize: 10, fontWeight: 700 }} />
+              <Line type="monotone" dataKey="redBull"      name="Red Bull"      stroke="#f87171" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="mcLaren"      name="McLaren"       stroke="#fbbf24" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="ferrari"      name="Ferrari"       stroke="#34d399" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="mercedes"     name="Mercedes"      stroke="#fb923c" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="racingBulls"  name="Racing Bulls"  stroke="#fb7185" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* 3) Head-to-Head Battle Matrix */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Head-to-Head Battle Matrix"
+          subtitle="Points gained per round vs each rival team (green = we gained, red = we lost)"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-rose-500/40 text-rose-300">
+              <Swords className="h-3 w-3 mr-1" /> R13–R16
+            </Badge>
+          }
+        />
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <th className="text-left font-medium px-3 py-2">Round</th>
+                {rivals.map((r) => (
+                  <th key={r.key} className="text-center font-medium px-3 py-2">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full" style={{ background: r.color }} />
+                      <span>{r.code}</span>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="font-mono-nums">
+              {battleRows.map((row) => (
+                <tr key={row.round} className="border-t border-border/30">
+                  <td className="px-3 py-2 font-bold text-muted-foreground">{row.round}</td>
+                  {rivals.map((r) => {
+                    const v = row[r.key]
+                    return (
+                      <td key={r.key} className="px-3 py-2 text-center">
+                        <span
+                          className={cn(
+                            'inline-flex items-center justify-center min-w-[3rem] rounded-md px-2 py-1 text-xs font-bold border',
+                            v > 0
+                              ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                              : v < 0
+                                ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                : 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
+                          )}
+                        >
+                          {v > 0 ? '+' : ''}{v}
+                        </span>
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+              <tr className="border-t-2 border-border/60 bg-red-500/5">
+                <td className="px-3 py-2.5 font-bold text-red-300">Total</td>
+                {rivals.map((r) => {
+                  const v = battleTotal[r.key]
+                  return (
+                    <td key={r.key} className="px-3 py-2.5 text-center">
+                      <span
+                        className={cn(
+                          'inline-flex items-center justify-center min-w-[3rem] rounded-md px-2 py-1 text-sm font-bold border',
+                          v > 0
+                            ? 'bg-emerald-500/25 text-emerald-200 border-emerald-500/40'
+                            : v < 0
+                              ? 'bg-rose-500/25 text-rose-200 border-rose-500/40'
+                              : 'bg-zinc-500/25 text-zinc-200 border-zinc-500/40',
+                        )}
+                      >
+                        {v > 0 ? '+' : ''}{v}
+                      </span>
+                    </td>
+                  )
+                })}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 px-3 py-2 text-[10px] text-muted-foreground font-mono-nums border-t border-border/60 flex flex-wrap gap-x-3 gap-y-1">
+          <span className="text-emerald-300">▲ OUTSCORED MERCEDES BY 10 OVER LAST 4 ROUNDS</span>
+          <span className="text-border">·</span>
+          <span className="text-rose-300">▼ TRAILING RED BULL BY 14</span>
+          <span className="text-border">·</span>
+          <span>NET SWING VS FERRARI: <span className="text-emerald-300">+3</span></span>
+        </div>
+      </Card>
+    </>
   )
 }
 

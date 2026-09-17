@@ -1,20 +1,22 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTelemetrySocket } from '@/hooks/use-telemetry-socket'
 import { useAppStore } from '@/lib/store'
-import { SectionHeader, fmtLapTime, fmtDelta, StatusBadge, channelColor } from '@/components/shared'
+import { SectionHeader, fmtLapTime, fmtDelta, StatusBadge, channelColor, TrackMap } from '@/components/shared'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Slider } from '@/components/ui/slider'
+import { Tooltip as UITooltip, TooltipTrigger as UITooltipTrigger, TooltipContent as UITooltipContent, TooltipProvider as UITooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import {
   Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, ReferenceArea, ReferenceLine, ComposedChart, Area,
 } from 'recharts'
-import { Download, Layers, GitCompare, Gauge, Radio, AlertCircle, Activity, Zap, Loader2 } from 'lucide-react'
+import { Download, Layers, GitCompare, Gauge, Radio, AlertCircle, Activity, Zap, Loader2, Play, Pause, Rewind, SkipBack, SkipForward, FastForward } from 'lucide-react'
 
 const CHANNEL_GROUPS = [
   { group: 'engine', label: 'Engine & Drivetrain', channels: ['speed', 'throttle', 'brake', 'gear', 'rpm'] },
@@ -25,7 +27,7 @@ const CHANNEL_GROUPS = [
 
 export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelemetrySocket> }) {
   const { sessions, selectedSessionId, setSelectedSessionId } = useAppStore()
-  const [mode, setMode] = useState<'live' | 'overlay'>('live')
+  const [mode, setMode] = useState<'live' | 'overlay' | 'playback'>('live')
   const [activeChannel, setActiveChannel] = useState('speed')
   const [group, setGroup] = useState('engine')
   const [compareChannel, setCompareChannel] = useState('tire_fl_temp')
@@ -82,6 +84,27 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
   })
 
   const liveTicks = socket.ticks
+
+  // Push anomalies to the global store (so the AI Engineer panel can auto-ask)
+  const { pushAnomaly } = useAppStore()
+  useEffect(() => {
+    if (mode !== 'live') return
+    const allChannels = CHANNEL_GROUPS.flatMap((g) => g.channels)
+    for (const c of allChannels) {
+      const v = liveTicks['TSU']?.channels[c]
+      if (v != null && isAnomaly(c, v)) {
+        const range = getChannelRange(c)
+        pushAnomaly({
+          channel: c,
+          driverCode: 'TSU',
+          value: v,
+          range: range ?? { min: 0, max: 0 },
+          message: `${c.replace(/_/g, ' ')} on TSU is ${v.toFixed(c.includes('temp') || c.includes('pressure') ? 1 : 0)} — outside safe range ${range ? `[${range.min}, ${range.max}]` : ''}`,
+        })
+      }
+    }
+  }, [liveTicks, mode, pushAnomaly])
+
   const liveSeries = useMemo(() => {
     const codes = socket.drivers.map((d) => d.code)
     const n = 60
@@ -124,10 +147,17 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
               </button>
               <button
                 onClick={() => setMode('overlay')}
-                className={cn('flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
+                className={cn('flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-l border-border/60',
                   mode === 'overlay' ? 'bg-red-500/15 text-red-300' : 'text-muted-foreground hover:text-foreground')}
               >
                 <GitCompare className="h-3.5 w-3.5" /> Lap Overlay & Diff
+              </button>
+              <button
+                onClick={() => setMode('playback')}
+                className={cn('flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors border-l border-border/60',
+                  mode === 'playback' ? 'bg-red-500/15 text-red-300' : 'text-muted-foreground hover:text-foreground')}
+              >
+                <Rewind className="h-3.5 w-3.5" /> Playback
               </button>
             </div>
           </div>
@@ -160,7 +190,7 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
         </div>
       </Card>
 
-      {mode === 'live' ? (
+      {mode === 'live' && (
         <>
           {/* channel group selector */}
           <Card className="border-border/50 bg-card/60 p-3">
@@ -318,7 +348,8 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
             </div>
           </Card>
         </>
-      ) : (
+      )}
+      {mode === 'overlay' && (
         <>
           {/* Lap picker + compare channel */}
           <Card className="border-border/50 bg-card/60 p-3">
@@ -458,7 +489,525 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
           )}
         </>
       )}
+      {mode === 'playback' && <PlaybackMode sessionId={selectedSessionId} />}
     </div>
+  )
+}
+
+// ============ Playback Mode (feat-3 — frame-by-frame lap scrubber) ============
+
+const PLAYBACK_CHANNELS = [
+  'speed', 'throttle', 'brake', 'gear', 'rpm',
+  'tire_fl_temp', 'tire_fr_temp', 'tire_rl_temp', 'tire_rr_temp',
+  'suspension_fl', 'boost_pressure', 'fuel_flow',
+] as const
+
+const PLAYBACK_SPEEDS = [0.5, 1, 2, 4] as const
+
+function PlaybackMode({ sessionId }: { sessionId: string | null }) {
+  // session detail (drivers + laps) — needed to populate the lap picker
+  const sessionQ = useQuery({
+    queryKey: ['session', sessionId],
+    enabled: !!sessionId,
+    staleTime: 0,
+    refetchOnMount: true,
+    queryFn: async () => (await fetch(`/api/sessions/${sessionId}`)).json(),
+  })
+
+  const ourDrivers: any[] = (sessionQ.data?.session.drivers ?? []).filter((d: any) => !d.driver.isRival)
+
+  // Build lap options for ALL our drivers' laps (TSU + LAW).
+  // Each option label: "TSU L9 1:43.34 S ★" (driver code, lap number, lap time, compound letter, star if fastest).
+  const lapOptions: { id: string; label: string; isFastest: boolean; lapTimeMs: number }[] = ourDrivers.flatMap((d: any) =>
+    (d.laps ?? []).map((l: any) => ({
+      id: l.id,
+      label: `${d.driver.code} L${l.lapNumber} ${fmtLapTime(l.lapTimeMs)} ${(l.tireCompound ?? 'M').slice(0, 1).toUpperCase()}${l.isFastest ? ' ★' : ''}`,
+      isFastest: !!l.isFastest,
+      lapTimeMs: l.lapTimeMs,
+    }))
+  )
+
+  // Default to the absolute fastest lap among our drivers.
+  const fastestOpt = lapOptions.length > 0
+    ? lapOptions.slice().sort((a, b) => a.lapTimeMs - b.lapTimeMs)[0]
+    : null
+  const fastestId = fastestOpt?.id ?? null
+  const validIds = new Set(lapOptions.map((o) => o.id))
+
+  const [selectedLapId, setSelectedLapId] = useState<string | null>(null)
+  // Render-time state adjustment (allowed by react-hooks/set-state-in-render):
+  // if no lap selected yet, or the previously-selected lap is no longer in the
+  // current session's lap list (e.g. user switched sessions), default to fastest.
+  if (fastestId && (selectedLapId === null || !validIds.has(selectedLapId))) {
+    setSelectedLapId(fastestId)
+  }
+
+  // Lap telemetry fetch — returns { lap, channels: { [key]: { data: [{distance, value, t}] } } }
+  const lapQ = useQuery({
+    queryKey: ['lap-telemetry', selectedLapId],
+    enabled: !!selectedLapId,
+    staleTime: 0,
+    queryFn: async () => (await fetch(`/api/telemetry/lap/${selectedLapId}`)).json(),
+  })
+
+  const lap = lapQ.data?.lap
+  const channels: Record<string, { key: string; label: string; unit: string; group: string; data: { distance: number; value: number; t: number }[] }> = lapQ.data?.channels ?? {}
+  // circuit.trackLength is stored in km in the seed; convert to meters for display.
+  const trackLengthKm = lap?.circuit?.trackLength ?? 0
+  const trackLengthM = Math.round(trackLengthKm * 1000)
+  const lapTimeMs = lap?.lapTimeMs ?? 0
+
+  // Scrubber state.
+  const [scrubPos, setScrubPos] = useState(0) // 0..100
+  const [playing, setPlaying] = useState(false)
+  const [speed, setSpeed] = useState(1)
+
+  // Render-time adjustment: when selectedLapId changes, reset scrub + pause.
+  const [prevLapId, setPrevLapId] = useState<string | null>(selectedLapId)
+  if (selectedLapId !== prevLapId) {
+    setPrevLapId(selectedLapId)
+    setScrubPos(0)
+    setPlaying(false)
+  }
+
+  // Auto-advance playback via setInterval (setState inside setInterval callback
+  // is allowed by react-hooks/set-state-in-effect — see devops.tsx CountdownCard).
+  useEffect(() => {
+    if (!playing) return
+    const id = setInterval(() => {
+      setScrubPos((prev) => {
+        const next = prev + speed * 0.5 // %/tick
+        return next >= 100 ? 0 : next // loop back to start
+      })
+    }, 100)
+    return () => clearInterval(id)
+  }, [playing, speed])
+
+  // Reference max distance from speed channel (all channels share the same distance grid in the seed).
+  const speedData = channels.speed?.data ?? []
+  const maxDist = speedData.length > 0 ? speedData[speedData.length - 1].distance : 0
+  const targetDistance = (scrubPos / 100) * maxDist
+  const distanceMeters = (scrubPos / 100) * trackLengthM
+  const elapsedMs = (scrubPos / 100) * lapTimeMs
+
+  // Sector determination (S1/S2/S3 boundaries from lap sectors, fallback to thirds).
+  const s1 = lap?.sector1Ms ?? lapTimeMs / 3
+  const s2 = lap?.sector2Ms ?? lapTimeMs / 3
+  const s3 = lap?.sector3Ms ?? lapTimeMs / 3
+  let currentSector = 1
+  if (elapsedMs > s1) currentSector = 2
+  if (elapsedMs > s1 + s2) currentSector = 3
+
+  // Multi-channel trace series for the playhead chart (speed + brake + throttle).
+  // Scale the raw telemetry distance to true circuit meters so the chart X-axis
+  // matches the "Distance: ... / ... m" display and the ReferenceLine playhead aligns.
+  const distScale = maxDist > 0 ? trackLengthM / maxDist : 1
+  const traceData = useMemo(() => {
+    const sp = channels.speed?.data ?? []
+    const br = channels.brake?.data ?? []
+    const th = channels.throttle?.data ?? []
+    return sp.map((p, i) => ({
+      distance: Math.round(p.distance * distScale),
+      speed: p.value,
+      brake: br[i]?.value ?? 0,
+      throttle: th[i]?.value ?? 0,
+    }))
+  }, [channels, distScale])
+
+  // ---- Loading / empty states ----
+  if (!sessionId) {
+    return (
+      <Card className="border-border/50 bg-card/60 p-6 text-sm text-muted-foreground">
+        Select a session above to begin lap playback.
+      </Card>
+    )
+  }
+  if (sessionQ.isLoading) {
+    return (
+      <Card className="border-border/50 bg-card/60 p-6 text-sm text-muted-foreground flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading session…
+      </Card>
+    )
+  }
+  if (lapQ.isLoading) {
+    return (
+      <Card className="border-border/50 bg-card/60 p-6 text-sm text-muted-foreground flex items-center gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading lap telemetry…
+      </Card>
+    )
+  }
+  if (!lap) {
+    return (
+      <Card className="border-border/50 bg-card/60 p-6 text-sm text-muted-foreground">
+        No lap selected — pick a lap below.
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* 1) Lap selector */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">Lap to replay</label>
+            <Select value={selectedLapId ?? ''} onValueChange={(v) => setSelectedLapId(v)}>
+              <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select lap" /></SelectTrigger>
+              <SelectContent>
+                {lapOptions.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">Circuit</div>
+            <div className="font-mono-nums text-sm text-foreground mt-1">{lap.circuit.name} · {trackLengthM.toLocaleString()} m</div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">Driver</div>
+            <div className="font-mono-nums text-sm text-foreground mt-1">
+              <span className="text-red-300 font-bold mr-1">{lap.driver.code}</span>
+              {lap.driver.name}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* 2) Scrubber centerpiece */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Lap Playback Scrubber"
+          subtitle={`Replay ${lap.driver.code} L${lap.lapNumber} · ${fmtLapTime(lapTimeMs)}${lap.isFastest ? ' · fastest lap' : ''}`}
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-red-500/40 text-red-300">
+              <Rewind className="h-3 w-3 mr-1" /> frame-by-frame
+            </Badge>
+          }
+        />
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4">
+          {/* left column: position + slider + transport + sectors */}
+          <div className="space-y-4">
+            {/* big position display */}
+            <div className="flex items-baseline gap-5 flex-wrap">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">Distance</div>
+                <div className="font-mono-nums text-2xl font-bold text-foreground">
+                  {Math.round(distanceMeters).toLocaleString()}
+                  <span className="text-sm text-muted-foreground ml-1">/ {trackLengthM.toLocaleString()} m</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">Lap time</div>
+                <div className="font-mono-nums text-2xl font-bold text-foreground">
+                  {fmtLapTime(elapsedMs)}
+                  <span className="text-sm text-muted-foreground ml-1">/ {fmtLapTime(lapTimeMs)}</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">Progress</div>
+                <div className="font-mono-nums text-2xl font-bold text-red-300">
+                  {scrubPos.toFixed(1)}
+                  <span className="text-sm text-muted-foreground ml-1">%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* the slider — prominent h-2 track, red thumb */}
+            <Slider
+              value={[scrubPos]}
+              onValueChange={(v) => setScrubPos(v[0])}
+              max={100}
+              step={0.5}
+              aria-label="Lap progress scrubber"
+              className="[&_[data-slot=slider-track]]:h-2 [&_[data-slot=slider-range]]:bg-red-500 [&_[data-slot=slider-thumb]]:h-5 [&_[data-slot=slider-thumb]]:w-5 [&_[data-slot=slider-thumb]]:border-red-500 [&_[data-slot=slider-thumb]]:bg-red-500 [&_[data-slot=slider-thumb]]:shadow-[0_0_10px_rgba(248,113,113,0.7)]"
+            />
+
+            {/* transport controls: skip back / play-pause / skip fwd + speed control */}
+            <div className="flex flex-wrap items-center gap-2">
+              <UITooltipProvider delayDuration={200}>
+                <UITooltip>
+                  <UITooltipTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-9 w-9 p-0 border-border/60 bg-card/40" onClick={() => setScrubPos(0)}>
+                      <SkipBack className="h-4 w-4" />
+                    </Button>
+                  </UITooltipTrigger>
+                  <UITooltipContent>Restart lap</UITooltipContent>
+                </UITooltip>
+              </UITooltipProvider>
+
+              <UITooltipProvider delayDuration={200}>
+                <UITooltip>
+                  <UITooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="h-10 w-10 p-0 border-red-500/50 bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                      onClick={() => setPlaying(!playing)}
+                      aria-label={playing ? 'Pause' : 'Play'}
+                    >
+                      {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                    </Button>
+                  </UITooltipTrigger>
+                  <UITooltipContent>{playing ? 'Pause playback' : 'Play playback'}</UITooltipContent>
+                </UITooltip>
+              </UITooltipProvider>
+
+              <UITooltipProvider delayDuration={200}>
+                <UITooltip>
+                  <UITooltipTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-9 w-9 p-0 border-border/60 bg-card/40" onClick={() => setScrubPos(100)}>
+                      <SkipForward className="h-4 w-4" />
+                    </Button>
+                  </UITooltipTrigger>
+                  <UITooltipContent>Jump to finish</UITooltipContent>
+                </UITooltip>
+              </UITooltipProvider>
+
+              <div className="h-6 w-px bg-border/40 mx-1" />
+
+              {/* speed control */}
+              <div className="flex items-center gap-1">
+                <FastForward className="h-3 w-3 text-muted-foreground mr-1" />
+                {PLAYBACK_SPEEDS.map((s) => (
+                  <Button
+                    key={s}
+                    variant={speed === s ? 'default' : 'outline'}
+                    size="sm"
+                    className={cn(
+                      'h-8 px-2 text-xs font-mono-nums',
+                      speed === s
+                        ? 'border-red-500/50 bg-red-500/15 text-red-300 hover:bg-red-500/25'
+                        : 'border-border/60 bg-card/40 text-muted-foreground hover:text-foreground'
+                    )}
+                    onClick={() => setSpeed(s)}
+                    aria-label={`Playback speed ${s}x`}
+                  >
+                    {s}x
+                  </Button>
+                ))}
+              </div>
+
+              <div className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono-nums">
+                <Gauge className="h-3.5 w-3.5" />
+                <span>{playing ? `playing @ ${speed}x` : 'paused'}</span>
+              </div>
+            </div>
+
+            {/* sector indicators */}
+            <div className="grid grid-cols-3 gap-2">
+              {[1, 2, 3].map((sec) => {
+                const secMs = sec === 1 ? s1 : sec === 2 ? s2 : s3
+                const active = currentSector === sec
+                return (
+                  <div
+                    key={sec}
+                    className={cn(
+                      'rounded-md border px-3 py-2 transition-colors',
+                      active
+                        ? 'border-red-500/60 bg-red-500/15 text-red-300'
+                        : 'border-border/50 bg-background/40 text-muted-foreground'
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase tracking-wider font-mono-nums">Sector {sec}</span>
+                      {active && <span className="h-1.5 w-1.5 rounded-full bg-red-500 blink" />}
+                    </div>
+                    <div className="mt-0.5 font-mono-nums text-sm font-bold">{fmtLapTime(secMs ?? 0)}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* right column: track map */}
+          <div className="flex flex-col items-center justify-center bg-background/40 rounded-md border border-border/40 p-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums mb-2 self-start">Track position</div>
+            <TrackMap circuitName={lap.circuit.name} size={180} active progress={scrubPos / 100} />
+            <div className="mt-3 text-xs font-mono-nums text-muted-foreground text-center">
+              {Math.round(distanceMeters).toLocaleString()}m / {trackLengthM.toLocaleString()}m
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* 3) Live channel readouts at current scrub position */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur p-4">
+        <SectionHeader
+          title="Channel Readouts"
+          subtitle="Values interpolated at the current scrub position · sparkline shows full-lap trace"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-amber-500/40 text-amber-300">
+              {PLAYBACK_CHANNELS.length} channels
+            </Badge>
+          }
+        />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          {PLAYBACK_CHANNELS.map((key) => {
+            const ch = channels[key]
+            const data = ch?.data ?? []
+            const value = interpValue(data, targetDistance)
+            const group = ch?.group ?? guessGroup(key)
+            const color = groupColorHex(group)
+            const unit = ch?.unit ?? ''
+            return (
+              <Card key={key} className="border-border/50 bg-card/60 card-hover p-3 relative overflow-hidden">
+                <div
+                  className="absolute top-0 left-0 right-0 h-px"
+                  style={{ background: `linear-gradient(to right, transparent, ${color}99, transparent)` }}
+                />
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums truncate">
+                  {key.replace(/_/g, ' ')}
+                </div>
+                <div className="mt-1 font-mono-nums text-xl font-bold" style={{ color }}>
+                  {value != null ? formatChannelValue(key, value) : '—'}
+                  {unit && <span className="ml-1 text-[10px] text-muted-foreground">{unit}</span>}
+                </div>
+                <div className="mt-1">
+                  <ChannelSparkline data={data.map((d) => d.value)} color={color} scrubPos={scrubPos} />
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      </Card>
+
+      {/* 4) Multi-channel trace chart with playhead */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover">
+        <SectionHeader
+          title="Full-Lap Trace"
+          subtitle="Speed (red line) · Brake (amber area) · Throttle (emerald line) — playhead at current scrub position"
+          right={
+            <div className="flex items-center gap-3 text-[10px] font-mono-nums">
+              <span className="flex items-center gap-1"><span className="h-2 w-3 rounded bg-red-500" /> speed</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-3 rounded bg-amber-400" /> brake</span>
+              <span className="flex items-center gap-1"><span className="h-2 w-3 rounded bg-emerald-400" /> throttle</span>
+            </div>
+          }
+        />
+        <div className="h-[320px] px-2 pb-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={traceData} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}>
+              <defs>
+                <linearGradient id="brakeFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#fbbf24" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="#fbbf24" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+              <XAxis dataKey="distance" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} unit="m" />
+              <YAxis yAxisId="left" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: '#a1a1aa' }}
+                labelFormatter={(v) => `${v} m`}
+              />
+              <Area yAxisId="right" dataKey="brake" stroke="#fbbf24" strokeWidth={1.5} fill="url(#brakeFill)" dot={false} isAnimationActive={false} />
+              <Line yAxisId="right" dataKey="throttle" type="monotone" stroke="#34d399" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+              <Line yAxisId="left" dataKey="speed" type="monotone" stroke="#f87171" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <ReferenceLine yAxisId="left" x={Math.round(distanceMeters)} stroke="#f87171" strokeWidth={1.5} strokeDasharray="4 4" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// ---- PlaybackMode helpers ----
+
+// Linear interpolation: given a sorted-by-distance telemetry sample array,
+// find the 2 nearest samples around `distance` and lerp the value.
+function interpValue(
+  data: { distance: number; value: number }[],
+  distance: number,
+): number | null {
+  if (!data || data.length === 0) return null
+  if (distance <= data[0].distance) return data[0].value
+  if (distance >= data[data.length - 1].distance) return data[data.length - 1].value
+  let lo = 0
+  let hi = data.length - 1
+  while (lo < hi - 1) {
+    const mid = (lo + hi) >> 1
+    if (data[mid].distance <= distance) lo = mid
+    else hi = mid
+  }
+  const a = data[lo]
+  const b = data[hi]
+  const range = b.distance - a.distance
+  const f = range === 0 ? 0 : (distance - a.distance) / range
+  return a.value + (b.value - a.value) * f
+}
+
+// Group → hex color (spec: engine=orange, brakes=red, aero=emerald, suspension=amber, power_unit=rose).
+function groupColorHex(group: string): string {
+  const m: Record<string, string> = {
+    engine: '#fb923c',
+    brakes: '#f87171',
+    aero: '#34d399',
+    suspension: '#fbbf24',
+    power_unit: '#fb7185',
+  }
+  return m[group] ?? '#a1a1aa'
+}
+
+// Fallback group guesser (used when channel metadata is missing from the API response).
+function guessGroup(key: string): string {
+  if (key === 'brake') return 'brakes'
+  if (key.startsWith('tire_')) return 'aero'
+  if (key.startsWith('suspension_')) return 'suspension'
+  if (key === 'boost_pressure' || key === 'fuel_flow') return 'power_unit'
+  return 'engine'
+}
+
+// Format a channel value for display — depends on the channel type.
+function formatChannelValue(key: string, value: number): string {
+  if (key === 'gear') return value.toFixed(0)
+  if (key === 'rpm') return Math.round(value).toLocaleString()
+  if (key === 'speed') return value.toFixed(0)
+  if (key === 'throttle' || key === 'brake') return value.toFixed(0)
+  if (key.startsWith('suspension_')) return (value >= 0 ? '+' : '') + value.toFixed(1)
+  return value.toFixed(1)
+}
+
+// Lightweight inline SVG sparkline — full-lap trace with a vertical red line at the scrub position.
+function ChannelSparkline({
+  data,
+  color,
+  scrubPos,
+}: {
+  data: number[]
+  color: string
+  scrubPos: number
+}) {
+  if (!data || data.length < 2) return <div className="h-6" />
+  const w = 100
+  const h = 24
+  const min = Math.min(...data)
+  const max = Math.max(...data)
+  const range = max - min || 1
+  const n = data.length - 1
+  const pts = data
+    .map((v, i) => `${((i / n) * w).toFixed(2)},${(h - ((v - min) / range) * (h - 4) - 2).toFixed(2)}`)
+    .join(' ')
+  const scrubX = (scrubPos / 100) * w
+  const scrubIdx = Math.min(n, Math.max(0, Math.round((scrubPos / 100) * n)))
+  const scrubY = h - ((data[scrubIdx] - min) / range) * (h - 4) - 2
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full h-6 block">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+      <line
+        x1={scrubX}
+        y1={0}
+        x2={scrubX}
+        y2={h}
+        stroke="#f87171"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx={scrubX} cy={scrubY} r={1.6} fill="#f87171" />
+    </svg>
   )
 }
 

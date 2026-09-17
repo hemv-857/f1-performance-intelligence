@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
   Cpu, Database, Wind, ShieldCheck, AlertTriangle, Play, Zap, Activity, Server, GitBranch, RefreshCw, CircleCheck, Clock, Radio,
+  Thermometer, Flame, Droplets, Sun, CloudSun, CloudRain, Gauge,
 } from 'lucide-react'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts'
 
@@ -124,6 +125,9 @@ export function RaceOpsView({ socket }: { socket: ReturnType<typeof useTelemetry
         <StatCard label="Ingest rate" value={(p?.ingestRateHz ?? 1000).toLocaleString()} unit="Hz" sub="100+ channels × 2 cars" accent="amber" icon={<Radio className="h-4 w-4" />} spark={[980, 1000, 1000, 1010, 1000, 1005, 1000, 1000]} />
         <StatCard label="Data loss" value="0" unit="samples" sub="guarantee holding" accent="emerald" icon={<ShieldCheck className="h-4 w-4" />} />
       </div>
+
+      {/* Weather & track conditions */}
+      <WeatherPanel />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Service health grid */}
@@ -321,4 +325,150 @@ function MiniBar({ label, value, unit, display, icon, max = 100 }: { label: stri
       </div>
     </div>
   )
+}
+
+// ---- Weather & Track Conditions panel ----
+function WeatherPanel() {
+  // Simulate live weather evolution with a stable seed (updates every render from a base model)
+  const base = 26.5 // air temp base (Singapore Q)
+  const tbase = 37.5 // track temp base
+  const now = Date.now() / 1000
+  const airTemp = base + Math.sin(now / 120) * 1.2 + Math.sin(now / 30) * 0.3
+  const trackTemp = tbase + Math.sin(now / 90) * 2.5 + Math.sin(now / 25) * 0.6
+  const windSpeed = 4.2 + Math.abs(Math.sin(now / 60)) * 3.8
+  const windDir = ((now / 20) % 360)
+  const humidity = 78 + Math.sin(now / 100) * 6
+  const pressure = 1009 + Math.sin(now / 200) * 2
+  const trackEvolution = Math.min(100, 42 + (now % 600) / 12) // track grip improving over the session
+
+  // 30-point history for the temp trend chart
+  const tempHistory = Array.from({ length: 30 }, (_, i) => ({
+    i,
+    air: base + Math.sin((now - (29 - i) * 60) / 120) * 1.2,
+    track: tbase + Math.sin((now - (29 - i) * 60) / 90) * 2.5,
+  }))
+
+  const rainRisk = humidity > 85 && pressure < 1008 ? 'ELEVATED' : 'LOW'
+  const gripLabel = trackEvolution > 80 ? 'OPTIMAL' : trackEvolution > 55 ? 'IMPROVING' : 'GREEN/SLIPPERY'
+  const gripColor = trackEvolution > 80 ? 'text-emerald-300' : trackEvolution > 55 ? 'text-amber-300' : 'text-red-300'
+
+  return (
+    <Card className="border-border/50 bg-card/60 card-hover">
+      <SectionHeader
+        title="Weather & Track Conditions"
+        subtitle="Live meteorological feed · track evolution index · Singapore Marina Bay"
+        right={
+          <Badge variant="outline" className="font-mono-nums text-[10px] border-emerald-500/40 text-emerald-300">
+            <CloudSun className="h-3 w-3 mr-1" /> DRY · 28°C
+          </Badge>
+        }
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_1.2fr] gap-4 px-4 pb-4">
+        {/* Current conditions grid */}
+        <div className="grid grid-cols-2 gap-3">
+          <WeatherStat icon={<Thermometer className="h-3.5 w-3.5" />} label="Air temp" value={airTemp.toFixed(1)} unit="°C" accent="text-amber-300" />
+          <WeatherStat icon={<Flame className="h-3.5 w-3.5" />} label="Track temp" value={trackTemp.toFixed(1)} unit="°C" accent="text-red-300" sub={`Δ ${(trackTemp - airTemp).toFixed(1)}°C`} />
+          <WeatherStat icon={<Wind className="h-3.5 w-3.5" />} label="Wind" value={windSpeed.toFixed(1)} unit="m/s" sub={`${windDir.toFixed(0)}°`} accent="text-emerald-300" />
+          <WeatherStat icon={<Droplets className="h-3.5 w-3.5" />} label="Humidity" value={humidity.toFixed(0)} unit="%" accent={humidity > 85 ? 'text-amber-300' : 'text-emerald-300'} />
+          <WeatherStat icon={<Gauge className="h-3.5 w-3.5" />} label="Pressure" value={pressure.toFixed(0)} unit="hPa" accent="text-emerald-300" />
+          <WeatherStat icon={<Sun className="h-3.5 w-3.5" />} label="UV index" value="3.2" unit="" accent="text-amber-300" />
+        </div>
+
+        {/* Temp trend chart */}
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums mb-1">Air vs Track temp trend (30 min)</div>
+          <div className="h-[140px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={tempHistory} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
+                <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="i" tick={{ fontSize: 9, fill: '#71717a' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 9, fill: '#71717a' }} axisLine={false} tickLine={false} unit="°" domain={[20, 45]} />
+                <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 11 }} labelFormatter={(v) => `${30 - (v as number)} min ago`} />
+                <Line dataKey="air" name="Air" stroke="#fbbf24" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                <Line dataKey="track" name="Track" stroke="#f87171" strokeWidth={2} dot={false} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex items-center gap-3 mt-1 text-[10px] font-mono-nums text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="h-0.5 w-3 bg-amber-400" /> Air</span>
+            <span className="flex items-center gap-1"><span className="h-0.5 w-3 bg-red-400" /> Track</span>
+          </div>
+        </div>
+
+        {/* Track evolution + rain risk */}
+        <div className="space-y-3">
+          {/* Track evolution gauge */}
+          <div className="rounded-md border border-border/50 bg-background/40 p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums flex items-center gap-1">
+                <Activity className="h-3 w-3" /> Track evolution
+              </span>
+              <span className={cn('text-[11px] font-bold font-mono-nums', gripColor)}>{gripLabel}</span>
+            </div>
+            <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+              <div
+                className={cn('h-full transition-all', trackEvolution > 80 ? 'bg-emerald-500' : trackEvolution > 55 ? 'bg-amber-500' : 'bg-red-500')}
+                style={{ width: `${trackEvolution}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between mt-1 text-[10px] font-mono-nums text-muted-foreground">
+              <span>GREEN</span>
+              <span className="text-foreground font-bold">{trackEvolution.toFixed(0)}%</span>
+              <span>OPTIMAL</span>
+            </div>
+          </div>
+
+          {/* Rain risk */}
+          <div className={cn('rounded-md border p-3', rainRisk === 'ELEVATED' ? 'border-amber-500/40 bg-amber-500/5' : 'border-emerald-500/30 bg-emerald-500/5')}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums flex items-center gap-1">
+                <CloudRain className="h-3 w-3" /> Rain risk
+              </span>
+              <span className={cn('text-[11px] font-bold font-mono-nums', rainRisk === 'ELEVATED' ? 'text-amber-300' : 'text-emerald-300')}>{rainRisk}</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              {rainRisk === 'ELEVATED'
+                ? 'Pressure dropping + high humidity — monitor for incoming shower. Inter tires on standby.'
+                : 'Stable pressure + moderate humidity. Dry running expected to continue.'}
+            </p>
+          </div>
+
+          {/* Wind direction compass */}
+          <div className="rounded-md border border-border/50 bg-background/40 p-3 flex items-center gap-3">
+            <div className="relative h-12 w-12 rounded-full border border-border/60 flex items-center justify-center shrink-0">
+              <span className="absolute top-0.5 text-[8px] text-muted-foreground font-mono-nums">N</span>
+              <span className="absolute bottom-0.5 text-[8px] text-muted-foreground font-mono-nums">S</span>
+              <svg viewBox="0 0 40 40" className="h-10 w-10" style={{ transform: `rotate(${windDir}deg)` }}>
+                <path d="M20 6 L24 22 L20 18 L16 22 Z" fill="#f87171" />
+              </svg>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">Wind direction</div>
+              <div className="font-mono-nums text-sm font-bold">{windDir.toFixed(0)}° <span className="text-muted-foreground text-[10px]">{dirLabel(windDir)}</span></div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">crosswind on S2 main straight</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+function WeatherStat({ icon, label, value, unit, sub, accent = 'text-foreground' }: { icon: React.ReactNode; label: string; value: string; unit?: string; sub?: string; accent?: string }) {
+  return (
+    <div className="rounded-md border border-border/50 bg-background/40 p-2.5">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">
+        {icon}{label}
+      </div>
+      <div className={cn('mt-1 font-mono-nums text-lg font-bold', accent)}>
+        {value}{unit && <span className="ml-0.5 text-xs font-medium text-muted-foreground">{unit}</span>}
+      </div>
+      {sub && <div className="text-[10px] text-muted-foreground mt-0.5 font-mono-nums">{sub}</div>}
+    </div>
+  )
+}
+
+function dirLabel(deg: number): string {
+  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+  return dirs[Math.round(deg / 45) % 8]
 }

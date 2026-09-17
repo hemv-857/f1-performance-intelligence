@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import {
-  Bot, Send, Sparkles, Loader2, AlertCircle, X, MessageSquare, Zap, TrendingDown, GitCompare, Disc,
+  Bot, Send, Sparkles, Loader2, AlertCircle, X, MessageSquare, Zap, TrendingDown, GitCompare, Disc, BellRing,
 } from 'lucide-react'
 
 interface ChatMsg {
@@ -26,13 +26,13 @@ const SUGGESTIONS = [
 ]
 
 export function AiEngineerPanel() {
-  const { selectedSessionId, sessions } = useAppStore()
-  const [open, setOpen] = useState(false)
+  const { selectedSessionId, sessions, anomalies, acknowledgeAnomaly, aiPanelOpen, setAiPanelOpen } = useAppStore()
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [contextInfo, setContextInfo] = useState<{ contextSize: number; usedSession: boolean; usedDriver: string | null } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const lastAutoAskedId = useRef<string | null>(null)
 
   // auto-scroll to bottom on new message
   useEffect(() => {
@@ -41,6 +41,20 @@ export function AiEngineerPanel() {
     }
   }, [messages, loading])
 
+  // Auto-ask the AI when a NEW anomaly arrives (dedupe by id, only the latest unacknowledged)
+  const latestAnomaly = anomalies.find((a) => !a.acknowledged)
+  useEffect(() => {
+    if (!latestAnomaly || latestAnomaly.id === lastAutoAskedId.current) return
+    if (loading) return
+    lastAutoAskedId.current = latestAnomaly.id
+    // auto-open the panel
+    setAiPanelOpen(true)
+    // auto-ask
+    const prompt = `ANOMALY DETECTED: ${latestAnomaly.message}. The live value is ${latestAnomaly.value.toFixed(latestAnomaly.channel.includes('temp') || latestAnomaly.channel.includes('pressure') ? 1 : 0)}. Diagnose the likely root cause and recommend an immediate engineering action (setup change or driving adjustment) to bring it back into the safe range [${latestAnomaly.range.min}, ${latestAnomaly.range.max}].`
+    send(prompt)
+    acknowledgeAnomaly(latestAnomaly.id)
+  }, [latestAnomaly?.id])
+
   const send = async (text: string) => {
     if (!text.trim() || loading) return
     const userMsg: ChatMsg = { role: 'user', content: text, ts: Date.now() }
@@ -48,7 +62,6 @@ export function AiEngineerPanel() {
     setInput('')
     setLoading(true)
     try {
-      const session = sessions.find((s) => s.id === selectedSessionId)
       const res = await fetch('/api/ai-engineer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -75,17 +88,25 @@ export function AiEngineerPanel() {
     setContextInfo(null)
   }
 
+  const unackCount = anomalies.filter((a) => !a.acknowledged).length
+
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={aiPanelOpen} onOpenChange={setAiPanelOpen}>
       <SheetTrigger asChild>
         <Button
           variant="outline"
           size="sm"
-          className="h-8 gap-1.5 border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:text-red-200 font-mono-nums text-xs"
+          className="relative h-8 gap-1.5 border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:text-red-200 font-mono-nums text-xs"
         >
           <Sparkles className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">AI Engineer</span>
-          <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-amber-400 blink" />
+          {unackCount > 0 ? (
+            <span className="absolute -top-1 -right-1 h-4 min-w-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center pulse-red">
+              {unackCount}
+            </span>
+          ) : (
+            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-amber-400 blink" />
+          )}
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="w-full sm:w-[440px] p-0 border-l-red-500/30 bg-background/95 backdrop-blur-xl flex flex-col">
@@ -116,6 +137,26 @@ export function AiEngineerPanel() {
             </div>
           )}
         </SheetHeader>
+
+        {/* Active anomaly banner */}
+        {unackCount > 0 && (
+          <div className="px-4 py-2.5 border-b border-red-500/30 bg-red-500/10 slide-up">
+            <div className="flex items-center gap-2 mb-1.5">
+              <BellRing className="h-3.5 w-3.5 text-red-400 shrink-0" />
+              <span className="text-[11px] font-bold text-red-300 font-mono-nums">{unackCount} ACTIVE ANOMALY{unackCount > 1 ? 'S' : ''}</span>
+              <span className="text-[10px] text-muted-foreground ml-auto">auto-diagnosing…</span>
+            </div>
+            <div className="space-y-1">
+              {anomalies.filter((a) => !a.acknowledged).slice(0, 3).map((a) => (
+                <div key={a.id} className="text-[10px] text-muted-foreground font-mono-nums truncate flex items-center gap-1.5">
+                  <span className="h-1 w-1 rounded-full bg-red-500 blink shrink-0" />
+                  <span className="text-red-300">{a.driverCode}</span>
+                  <span>{a.channel.replace(/_/g, ' ')}: {a.value.toFixed(a.channel.includes('temp') || a.channel.includes('pressure') ? 1 : 0)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <ScrollArea className="flex-1 px-4 py-3">
