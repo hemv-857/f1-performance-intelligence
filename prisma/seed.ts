@@ -61,10 +61,18 @@ async function main() {
   }
 
   // ---- Circuits ----
+  // Current season (3) + 5 iconic historical circuits used in prior-season rounds
   const circuitDefs = [
+    // Current season
     { name: 'Suzuka', country: 'Japan', trackLength: 5.807, lapCount: 53, sectors: 3, corners: 18 },
     { name: 'Singapore', country: 'Singapore', trackLength: 4.940, lapCount: 62, sectors: 3, corners: 19 },
     { name: 'Austin', country: 'USA', trackLength: 5.513, lapCount: 56, sectors: 3, corners: 20 },
+    // Prior seasons (2023 / 2024)
+    { name: 'Monaco', country: 'Monaco', trackLength: 3.337, lapCount: 78, sectors: 3, corners: 19 },
+    { name: 'Silverstone', country: 'United Kingdom', trackLength: 5.891, lapCount: 52, sectors: 3, corners: 18 },
+    { name: 'Monza', country: 'Italy', trackLength: 5.793, lapCount: 53, sectors: 3, corners: 11 },
+    { name: 'Spa-Francorchamps', country: 'Belgium', trackLength: 7.004, lapCount: 44, sectors: 3, corners: 19 },
+    { name: 'Zandvoort', country: 'Netherlands', trackLength: 4.259, lapCount: 72, sectors: 3, corners: 14 },
   ]
   const circuits = {} as Record<string, any>
   for (const c of circuitDefs) {
@@ -77,12 +85,25 @@ async function main() {
   const now = new Date()
   const sessions = [] as any[]
 
-  // Round ordering: Suzuka=round1 (past), Singapore=round2 (this weekend - live), Austin=round3 (scheduled)
+  // Round ordering:
+  // Current season: Suzuka=round1 (past), Singapore=round2 (this weekend - live), Austin=round3 (scheduled)
+  // Prior season 2024 (~1yr ago): Monaco, Silverstone
+  // Prior season 2023 (~2yr ago): Monza, Spa, Zandvoort
+  // `compact: true` rounds generate fewer laps + telemetry (fastest lap only) to keep DB manageable
+  // while visibly backing the "<2s query on 5-year history" claim.
   const rounds = [
-    { circuit: 'Suzuka', round: 1, offsetDays: -21, status: 'completed' },
-    { circuit: 'Singapore', round: 2, offsetDays: 0, status: 'live' },
-    { circuit: 'Austin', round: 3, offsetDays: 14, status: 'scheduled' },
-  ]
+    // --- Current season (3 rounds — UNCHANGED) ---
+    { circuit: 'Suzuka', round: 1, offsetDays: -21, status: 'completed', compact: false },
+    { circuit: 'Singapore', round: 2, offsetDays: 0, status: 'live', compact: false },
+    { circuit: 'Austin', round: 3, offsetDays: 14, status: 'scheduled', compact: false },
+    // --- Prior season 2024 (2 rounds, ~1 year ago) ---
+    { circuit: 'Monaco', round: 6, offsetDays: -365, status: 'completed', compact: true },
+    { circuit: 'Silverstone', round: 10, offsetDays: -395, status: 'completed', compact: true },
+    // --- Prior season 2023 (3 rounds, ~2 years ago) ---
+    { circuit: 'Monza', round: 13, offsetDays: -730, status: 'completed', compact: true },
+    { circuit: 'Spa-Francorchamps', round: 12, offsetDays: -760, status: 'completed', compact: true },
+    { circuit: 'Zandvoort', round: 14, offsetDays: -800, status: 'completed', compact: true },
+  ] as const
 
   for (const r of rounds) {
     const circuit = circuits[r.circuit]
@@ -113,7 +134,7 @@ async function main() {
           status: sessionStatus,
         },
       })
-      sessions.push({ session, circuit: r.circuit, type: st, round: r.round, status: session.status })
+      sessions.push({ session, circuit: r.circuit, type: st, round: r.round, status: session.status, compact: r.compact })
     }
   }
 
@@ -129,6 +150,11 @@ async function main() {
     Suzuka: { baseMs: 95000, corners: [0.04, 0.12, 0.18, 0.24, 0.33, 0.42, 0.50, 0.56, 0.62, 0.68, 0.75, 0.82, 0.88, 0.94] },
     Singapore: { baseMs: 103000, corners: [0.03, 0.08, 0.14, 0.20, 0.26, 0.32, 0.38, 0.44, 0.50, 0.55, 0.60, 0.66, 0.72, 0.78, 0.84, 0.90, 0.95] },
     Austin: { baseMs: 93000, corners: [0.05, 0.14, 0.22, 0.30, 0.40, 0.48, 0.55, 0.62, 0.70, 0.78, 0.85, 0.92] },
+    Monaco: { baseMs: 74000, corners: [0.03, 0.08, 0.14, 0.20, 0.26, 0.30, 0.36, 0.42, 0.50, 0.56, 0.62, 0.68, 0.74, 0.80, 0.86, 0.92, 0.97] },
+    Silverstone: { baseMs: 90000, corners: [0.04, 0.10, 0.16, 0.22, 0.30, 0.36, 0.42, 0.50, 0.56, 0.62, 0.68, 0.75, 0.82, 0.88, 0.94] },
+    Monza: { baseMs: 82000, corners: [0.04, 0.14, 0.28, 0.40, 0.50, 0.60, 0.72, 0.84, 0.94] },
+    'Spa-Francorchamps': { baseMs: 108000, corners: [0.03, 0.08, 0.14, 0.22, 0.30, 0.36, 0.42, 0.50, 0.56, 0.62, 0.70, 0.78, 0.84, 0.90, 0.96] },
+    Zandvoort: { baseMs: 80000, corners: [0.04, 0.10, 0.16, 0.22, 0.28, 0.36, 0.44, 0.50, 0.58, 0.66, 0.74, 0.82, 0.90, 0.96] },
   } as any
 
   const driverSkill = {
@@ -226,7 +252,10 @@ async function main() {
     for (const code of sessionDriverPool) {
       const driver = drivers[code]
       const skill = driverSkill[code] ?? 0.99
-      const lapCount = s.type === 'Q' ? 12 : s.type === 'RACE' ? 20 : 14
+      // Compact (prior-season) rounds: 8 laps/driver regardless of session type.
+      // Current-season rounds: 12 (Q) / 20 (RACE) / 14 (FP).
+      const compact = !!s.compact
+      const lapCount = compact ? 8 : s.type === 'Q' ? 12 : s.type === 'RACE' ? 20 : 14
       let bestMs = Infinity
       const lapIds: string[] = []
       for (let li = 1; li <= lapCount; li++) {
@@ -270,11 +299,12 @@ async function main() {
       })
       if (fastest) await db.lap.update({ where: { id: fastest.id }, data: { isFastest: true } })
 
-      // Generate full telemetry for 3 reference laps: fastest, an early lap, a late lap
+      // Generate full telemetry for 3 reference laps: fastest, an early lap, a late lap.
+      // Compact rounds: only the single fastest lap, to keep DB manageable.
       const refLaps = await db.lap.findMany({
         where: { sessionId: s.session.id, driverId: driver.id },
         orderBy: { lapTimeMs: 'asc' },
-        take: 3,
+        take: compact ? 1 : 3,
       })
       for (const refLap of refLaps) {
         const channelKeys = ['speed', 'throttle', 'brake', 'gear', 'rpm', 'tire_fl_temp', 'tire_fr_temp', 'tire_rl_temp', 'tire_rr_temp', 'suspension_fl', 'suspension_fr', 'boost_pressure', 'fuel_flow', 'drs']

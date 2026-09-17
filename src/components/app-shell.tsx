@@ -9,6 +9,7 @@ import { BuilderView } from '@/components/views/builder'
 import { AnalyticsView } from '@/components/views/analytics'
 import { DevOpsView } from '@/components/views/devops'
 import { RaceOpsView } from '@/components/views/race-ops'
+import { PitBoxView } from '@/components/views/pitbox'
 import {
   Activity,
   Gauge,
@@ -32,6 +33,7 @@ const NAV = [
   { key: 'analytics', label: 'Analytics (dbt)', icon: Activity, desc: 'Delta-P · deg · fuel' },
   { key: 'devops', label: 'DevOps', icon: Workflow, desc: 'CI/CD · canary · rollback' },
   { key: 'raceops', label: 'Race Ops', icon: ShieldAlert, desc: 'Health · monitoring · playbook' },
+  { key: 'pitbox', label: 'Pit-Box', icon: Radio, desc: 'Strategist mobile view' },
 ] as const
 
 export function AppShell() {
@@ -185,6 +187,7 @@ export function AppShell() {
             {activeView === 'analytics' && <AnalyticsView />}
             {activeView === 'devops' && <DevOpsView />}
             {activeView === 'raceops' && <RaceOpsView socket={socket} />}
+            {activeView === 'pitbox' && <PitBoxView socket={socket} />}
           </div>
         </main>
       </div>

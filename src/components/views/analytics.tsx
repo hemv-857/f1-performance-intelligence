@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAppStore } from '@/lib/store'
-import { SectionHeader, StatCard, fmtLapTime, fmtDelta, StatusBadge } from '@/components/shared'
+import { SectionHeader, StatCard, fmtLapTime, fmtDelta, StatusBadge, SessionBadge, TrackMap } from '@/components/shared'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,13 +13,14 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Line, LineChart, BarChart, Bar, Cell, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, ReferenceLine, Legend, Area, AreaChart,
 } from 'recharts'
-import { Activity, Timer, TrendingDown, Fuel, Database, GitCompare, Layers, Gauge, Zap, ChevronRight } from 'lucide-react'
+import { Activity, Timer, TrendingDown, Fuel, Database, GitCompare, Layers, Gauge, Zap, ChevronRight, MapPin, Wind, Flame, Flag } from 'lucide-react'
 
 // (Cell import moved up)
 
 export function AnalyticsView() {
   const { sessions, selectedSessionId, setSelectedSessionId, setActiveView } = useAppStore()
   const completedSessions = sessions.filter((s) => s.status !== 'scheduled')
+  const selectedSession = sessions.find((s) => s.id === selectedSessionId) ?? null
 
   const driversQ = useQuery({
     queryKey: ['drivers'],
@@ -97,6 +98,65 @@ export function AnalyticsView() {
         </div>
       </Card>
 
+      {/* Circuit context card — track map + circuit facts */}
+      {selectedSession ? (
+        <Card className="border-border/50 bg-card/60 overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-[300px_1fr]">
+            <div className="flex items-center justify-center p-5 bg-gradient-to-br from-red-950/25 via-transparent to-transparent border-b md:border-b-0 md:border-r border-border/40">
+              <TrackMap
+                circuitName={selectedSession.circuit.name}
+                active
+                showLabels
+                size={280}
+              />
+            </div>
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <Badge variant="outline" className="border-red-500/40 bg-red-500/10 text-red-300 font-mono-nums text-[10px]">
+                  ROUND {selectedSession.round}
+                </Badge>
+                <SessionBadge type={selectedSession.type} />
+                <StatusBadge status={selectedSession.status} />
+                <span className="text-[11px] text-muted-foreground font-mono-nums ml-auto">
+                  {new Date(selectedSession.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              <h2 className="text-2xl font-bold tracking-tight">{selectedSession.circuit.name}</h2>
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground mt-0.5 flex-wrap">
+                <Flag className="h-3.5 w-3.5 shrink-0" />
+                <span>{selectedSession.circuit.country}</span>
+                {selectedSession.condition && (
+                  <>
+                    <span className="text-border">·</span>
+                    <span className="capitalize">{selectedSession.condition}</span>
+                  </>
+                )}
+              </div>
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <CircuitStat icon={<MapPin className="h-3.5 w-3.5" />} label="Track length" value={`${selectedSession.circuit.trackLength.toFixed(3)} km`} />
+                <CircuitStat icon={<Zap className="h-3.5 w-3.5" />} label="Corners" value={selectedSession.circuit.corners} />
+                <CircuitStat icon={<Wind className="h-3.5 w-3.5" />} label="Air temp" value={selectedSession.airTemp != null ? `${selectedSession.airTemp}°C` : '—'} />
+                <CircuitStat icon={<Flame className="h-3.5 w-3.5" />} label="Track temp" value={selectedSession.trackTemp != null ? `${selectedSession.trackTemp}°C` : '—'} />
+              </div>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card className="border-border/50 bg-card/60 overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-[280px_1fr]">
+            <div className="flex items-center justify-center p-5 bg-gradient-to-br from-red-950/20 via-transparent to-transparent border-b md:border-b-0 md:border-r border-border/40 opacity-50">
+              <TrackMap circuitName="Singapore" size={240} />
+            </div>
+            <div className="p-6 flex flex-col justify-center">
+              <h2 className="text-lg font-semibold">No session selected</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Pick a session above to load its circuit map, track conditions, and corner-by-corner analysis context.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* metrics row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
@@ -144,7 +204,7 @@ export function AnalyticsView() {
 
         {/* ---- Delta-P ---- */}
         <TabsContent value="delta" className="space-y-4">
-          <Card className="border-border/50 bg-card/60">
+          <Card className="border-border/50 bg-card/60 card-hover">
             <SectionHeader
               title="Lap-by-lap delta-P vs rival"
               subtitle={deltaQ.data ? `${deltaQ.data.pairSummary[0]?.driverCode} vs ${deltaQ.data.pairSummary[0]?.rivalCode} — positive = we are slower` : 'Loading…'}
@@ -182,7 +242,7 @@ export function AnalyticsView() {
           </Card>
 
           {/* sector heatmap */}
-          <Card className="border-border/50 bg-card/60">
+          <Card className="border-border/50 bg-card/60 card-hover">
             <SectionHeader title="Sector delta heatmap" subtitle="Per-lap, per-sector delta (ms) — red = slower, emerald = faster" />
             <div className="overflow-x-auto p-2">
               <table className="w-full text-[11px] font-mono-nums">
@@ -222,7 +282,7 @@ export function AnalyticsView() {
 
         {/* ---- Degradation ---- */}
         <TabsContent value="degradation" className="space-y-4">
-          <Card className="border-border/50 bg-card/60">
+          <Card className="border-border/50 bg-card/60 card-hover">
             <SectionHeader
               title="Tire degradation curve"
               subtitle={degQ.data ? `${degQ.data.driver.code} · base ${fmtLapTime(degQ.data.baseLapTimeMs)}` : 'Loading…'}
@@ -245,7 +305,7 @@ export function AnalyticsView() {
             </div>
           </Card>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card className="border-border/50 bg-card/60">
+            <Card className="border-border/50 bg-card/60 card-hover">
               <SectionHeader title="Tire temp trend" subtitle="Avg temp per lap (°C)" />
               <div className="h-[200px] px-2 pb-2">
                 <ResponsiveContainer width="100%" height="100%">
@@ -259,7 +319,7 @@ export function AnalyticsView() {
                 </ResponsiveContainer>
               </div>
             </Card>
-            <Card className="border-border/50 bg-card/60">
+            <Card className="border-border/50 bg-card/60 card-hover">
               <SectionHeader title="By compound" subtitle="Avg degradation per compound" />
               <div className="h-[200px] px-2 pb-2">
                 <ResponsiveContainer width="100%" height="100%">
@@ -282,7 +342,7 @@ export function AnalyticsView() {
 
         {/* ---- Fuel ---- */}
         <TabsContent value="fuel" className="space-y-4">
-          <Card className="border-border/50 bg-card/60">
+          <Card className="border-border/50 bg-card/60 card-hover">
             <SectionHeader title="Fuel consumption trend" subtitle={fuelQ.data ? `${fuelQ.data.driver.code} · ${fuelQ.data.summary.totalBurnKg}kg total · ${fuelQ.data.summary.avgBurnPerLapKg}kg/lap` : 'Loading…'} />
             <div className="h-[300px] px-2 pb-2">
               <ResponsiveContainer width="100%" height="100%">
@@ -314,7 +374,7 @@ export function AnalyticsView() {
 
         {/* ---- Qualifying replay ---- */}
         <TabsContent value="replay" className="space-y-4">
-          <Card className="border-border/50 bg-card/60">
+          <Card className="border-border/50 bg-card/60 card-hover">
             <SectionHeader
               title="Qualifying replay — Friday vs Saturday"
               subtitle="Overlay best qualifying laps across sessions (delta-P aggregated)"
@@ -355,6 +415,17 @@ export function AnalyticsView() {
           </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function CircuitStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
+  return (
+    <div className="rounded-md border border-border/50 bg-background/40 p-2.5">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">
+        {icon}{label}
+      </div>
+      <div className="mt-1 font-mono-nums text-base font-bold text-foreground">{value}</div>
     </div>
   )
 }

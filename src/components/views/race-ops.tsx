@@ -166,7 +166,7 @@ export function RaceOpsView({ socket }: { socket: ReturnType<typeof useTelemetry
         </Card>
 
         {/* Consumer lag trend */}
-        <Card className="border-border/50 bg-card/60">
+        <Card className="border-border/50 bg-card/60 card-hover">
           <SectionHeader title="Consumer lag (live)" subtitle="Kafka → Spark" />
           <div className="h-[180px] px-2">
             <ResponsiveContainer width="100%" height="100%">
@@ -187,7 +187,7 @@ export function RaceOpsView({ socket }: { socket: ReturnType<typeof useTelemetry
 
       {/* Incident playbook */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="border-border/50 bg-card/60">
+        <Card className="border-border/50 bg-card/60 card-hover">
           <SectionHeader title="Incident playbook" subtitle="Auto-action on trigger · manual run available" />
           <div className="px-4 pb-4 space-y-2">
             {PLAYBOOKS.map((pb) => {
@@ -242,7 +242,7 @@ export function RaceOpsView({ socket }: { socket: ReturnType<typeof useTelemetry
         </Card>
 
         {/* Incident history */}
-        <Card className="border-border/50 bg-card/60">
+        <Card className="border-border/50 bg-card/60 card-hover">
           <SectionHeader title="Incident history" subtitle="Auto-resolved playbook runs" right={
             <Badge variant="outline" className="font-mono-nums text-[10px]">{(incidentsQ.data?.incidents ?? []).length} runs</Badge>
           } />
@@ -276,7 +276,7 @@ export function RaceOpsView({ socket }: { socket: ReturnType<typeof useTelemetry
       </div>
 
       {/* Pre-race health checks */}
-      <Card className="border-border/50 bg-card/60">
+      <Card className="border-border/50 bg-card/60 card-hover">
         <SectionHeader title="Pre-race health checks" subtitle="Synthetic race simulation stress-tests all pipelines before lights-out" right={
           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={runSynthetic}>
             <Play className="h-3.5 w-3.5 mr-1" /> Run full check

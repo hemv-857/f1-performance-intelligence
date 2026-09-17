@@ -37,6 +37,11 @@ import {
   AlertTriangle,
   TrendingUp,
   Cpu,
+  FileCode2,
+  Copy,
+  Download,
+  Terminal,
+  Box,
 } from 'lucide-react'
 
 // ---- API types ----
@@ -798,6 +803,9 @@ export function DevOpsView() {
         </Card>
       </div>
 
+      {/* Section 7: Pipeline artifacts (IaC / CI YAML viewer) */}
+      <PipelineArtifactsCard />
+
       {/* Sonner toaster scoped to this view (self-contained) */}
       <SonnerToaster
         position="bottom-right"
@@ -881,3 +889,583 @@ function CanaryRolloutCard({ canary }: { canary: Deployment }) {
     </Card>
   )
 }
+
+// ===========================================================
+// Section 7: Pipeline artifacts (IaC / CI YAML viewer)
+// ===========================================================
+
+interface PipelineArtifact {
+  filename: string
+  type: 'YAML' | 'K8s manifest' | 'dbt SQL'
+  content: string
+}
+
+const CI_CD_YAML = `# .github/workflows/ci-cd.yml
+# F1 Performance Intelligence Platform — continuous delivery pipeline
+name: ci-cd
+
+on:
+  push:
+    branches: [main, release/*]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      promote_to:
+        description: 'Manual canary gate (50|100)'
+        required: false
+        default: '50'
+
+concurrency:
+  group: ci-cd-\${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC + K8s deploy
+
+env:
+  REGISTRY: ghcr.io/racing-bulls/f1-platform
+  IMAGE_TAG: \${{ github.sha }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'bun' }
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'bun' }
+      - run: bun install --frozen-lockfile
+      - name: Regression suite vs historical telemetry
+        run: bun run test:regression -- --baseline seasons=2023,2024
+      - name: Sub-2s query budget assertion
+        run: bun run test:query-budget -- --p95-ms 2000 --history 5y
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy SCA
+        uses: aquasecurity/trivy-action@0.20.0
+        with: { severity: 'CRITICAL,HIGH', exit-code: '1' }
+      - name: CodeQL
+        uses: github/codeql-action/analyze@v3
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: \${{ github.actor }}
+          password: \${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          push: true
+          tags: \${{ env.REGISTRY }}:\${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-canary:
+    runs-on: ubuntu-latest
+    needs: build
+    environment: canary-10pct
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Auth to race-edge cluster (OIDC)
+        run: |
+          gcloud auth login --brief --cred-file=\${{ secrets.GCP_WIF }}
+          gcloud container clusters get-credentials race-edge --region=europe-west1
+      - name: Canary 10% rollout
+        run: |
+          kubectl set image deploy/telemetry-ingest ingest=\${{ env.REGISTRY }}:\${{ env.IMAGE_TAG }}
+          kubectl patch hpa telemetry-ingest -p '{"spec":{"minReplicas":4}}'
+          kubectl rollout status deploy/telemetry-ingest --timeout=180s
+      - name: Soak window (10 min)
+        run: sleep 600
+      - name: Smoke test canary
+        run: bun run scripts/smoke-canary.ts -- --canary 10
+
+  promote-canary:
+    runs-on: ubuntu-latest
+    needs: deploy-canary
+    environment: canary-promote-gate   # manual approval
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Promote to \${{ github.event.inputs.promote_to }}%
+        run: |
+          kubectl scale deploy/telemetry-ingest --replicas=\${{ github.event.inputs.promote_to == '100' && 12 || 8 }}
+          kubectl patch hpa telemetry-ingest -p '{"spec":{"maxReplicas":12}}'
+
+  rollback:
+    runs-on: ubuntu-latest
+    needs: deploy-canary
+    if: failure()
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          kubectl rollout undo deploy/telemetry-ingest
+          kubectl annotate deploy/telemetry-ingest rb.com/rolled-back-by="\${{ github.actor }}" --overwrite
+          gh api -X POST /repos/\${{ github.repository }}/issues \\
+            -f title="Auto-rollback: \${{ env.IMAGE_TAG }}" --silent
+`
+
+const K8S_TELEMETRY_INGEST_YAML = `# k8s/telemetry-ingest.yaml
+# Kafka → Spark ingest pods (race-edge cluster, low-latency path)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry-ingest
+  namespace: f1-platform
+  labels:
+    app: telemetry-ingest
+    tier: realtime
+spec:
+  replicas: 6
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels: { app: telemetry-ingest }
+  template:
+    metadata:
+      labels: { app: telemetry-ingest, tier: realtime }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+        rb.com/last-applied: "\${IMAGE_TAG}"
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: europe-west1
+        rb.com/node-pool: race-edge
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm: { labelSelector: { matchLabels: { app: telemetry-ingest } }, topologyKey: kubernetes.io/hostname }
+      containers:
+        - name: ingest
+          image: ghcr.io/racing-bulls/f1-platform:\${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: grpc, containerPort: 8080 }
+            - { name: metrics, containerPort: 9100 }
+          env:
+            - { name: KAFKA_BROKERS, valueFrom: { secretKeyRef: { name: kafka-edge, key: brokers } } }
+            - { name: KAFKA_TOPIC, value: "telemetry-f1" }
+            - { name: CONSUMER_GROUP, value: "telemetry-ingest-v2" }
+            - { name: DOWNSTREAM_SINK, value: "spark-streaming:9092" }
+          resources:
+            requests: { cpu: "500m", memory: "768Mi" }
+            limits:   { cpu: "1500m", memory: "2Gi" }
+          livenessProbe:
+            httpGet: { path: /healthz, port: grpc }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /readyz, port: grpc }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 2
+          volumeMounts:
+            - { name: checkpoint, mountPath: /var/lib/checkpoint }
+      volumes:
+        - name: checkpoint
+          persistentVolumeClaim: { claimName: ingest-checkpoint-pvc }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-ingest
+  namespace: f1-platform
+spec:
+  type: ClusterIP
+  selector: { app: telemetry-ingest }
+  ports:
+    - { name: grpc, port: 8080, targetPort: 8080 }
+    - { name: metrics, port: 9100, targetPort: 9100 }
+`
+
+const K8S_SPARK_STREAMING_YAML = `# k8s/spark-streaming.yaml
+# Spark Structured Streaming aggregation jobs (5s tumbling windows)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-streaming
+  namespace: f1-platform
+  labels: { app: spark-streaming, tier: realtime }
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 25%, maxUnavailable: 0 }
+  selector:
+    matchLabels: { app: spark-streaming }
+  template:
+    metadata:
+      labels: { app: spark-streaming, tier: realtime }
+    spec:
+      nodeSelector:
+        rb.com/node-pool: race-edge
+        rb.com/workload-profile: streaming
+      containers:
+        - name: spark-driver
+          image: ghcr.io/racing-bulls/spark-streaming:3.5.1-rb1
+          imagePullPolicy: IfNotPresent
+          args:
+            - /opt/spark/bin/spark-submit
+            - --master;k8s://https://kubernetes.default.svc
+            - --conf;spark.app.name=f1-aggregation
+            - --conf;spark.streaming.backpressure.enabled=true
+            - --conf;spark.streaming.kafka.maxRatePerPartition=12000
+            - --conf;spark.sql.streaming.checkpointLocation=/checkpoint/agg-5s-lap
+            - --class;com.racingbulls.streaming.DeltaPAggregator
+            - /opt/spark/jobs/f1-aggregator.jar
+            - --input-topic=telemetry-f1
+            - --output-topic=delta-p-live
+            - --window=5s
+          env:
+            - { name: SPARK_DRIVER_MEMORY, value: "4g" }
+            - { name: SPARK_DRIVER_CORES, value: "2" }
+            - { name: CHECKPOINT_RETENTION, value: "72h" }
+          resources:
+            requests: { cpu: "1500m", memory: "4Gi" }
+            limits:   { cpu: "3000m", memory: "6Gi" }
+          livenessProbe:
+            exec: { command: ["/bin/sh", "-c", "curl -fsS localhost:4040/api/v1/status || exit 1"] }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /api/v1/status, port: 4040 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - { name: checkpoint, mountPath: /checkpoint }
+            - { name: spark-logs, mountPath: /var/log/spark }
+      volumes:
+        - name: checkpoint
+          persistentVolumeClaim: { claimName: spark-checkpoint-pvc }
+        - name: spark-logs
+          emptyDir: {}
+`
+
+const K8S_HPA_TELEMETRY_YAML = `# k8s/hpa-telemetry.yaml
+# HorizontalPodAutoscaler — telemetry-ingest scales with race weekends
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: telemetry-ingest
+  namespace: f1-platform
+  labels: { app: telemetry-ingest, tier: realtime }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: telemetry-ingest
+  minReplicas: 4
+  maxReplicas: 12
+  scaleDown:
+    stabilizationWindowSeconds: 300     # 5 min before scaling down
+    policies:
+      - { type: Percent, value: 25, periodSeconds: 60 }
+  scaleUp:
+    stabilizationWindowSeconds: 30
+    policies:
+      - { type: Percent, value: 100, periodSeconds: 30 }
+      - { type: Pods,     value: 4,    periodSeconds: 30 }
+    selectPolicy: Max
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Pods
+      pods:
+        metric:
+          name: kafka_consumer_lag_seconds
+        target:
+          type: AverageValue
+          averageValue: "5"
+  behavior:
+    terminationGracePeriodSeconds: 60
+`
+
+const DBT_FCT_DELTA_P_SECTOR_SQL = `-- dbt/models/fct_delta_p_sector.sql
+-- Per-sector delta-P vs rivals (positive = we are slower than rival).
+-- Joins stg_laps (cleaned) with int_delta_p (computed per-lap delta).
+{{ config(
+    materialized='incremental',
+    cluster_by=['session_id','driver_id'],
+    unique_key=['session_id','driver_id','rival_id','lap_number','sector'],
+    on_schema_change='append_new_columns',
+    tags=['aero','strategy','delta_p']
+) }}
+
+with stg_laps as (
+    select
+        session_id,
+        driver_id,
+        lap_number,
+        sector1_ms,
+        sector2_ms,
+        sector3_ms,
+        tire_compound,
+        tire_temp_avg,
+        fuel_kg,
+        is_valid
+    from {{ ref('stg_laps') }}
+    where is_valid = true
+),
+
+int_delta_p as (
+    select
+        session_id,
+        driver_id,
+        rival_id,
+        lap_number,
+        sector,
+        delta_ms
+    from {{ ref('int_delta_p') }}
+    where channel_key is null
+),
+
+rival_sectors as (
+    select
+        l.session_id,
+        l.driver_id      as rival_id,
+        l.lap_number,
+        l.sector1_ms,
+        l.sector2_ms,
+        l.sector3_ms,
+        l.tire_compound  as rival_compound
+    from stg_laps l
+),
+
+joined as (
+    select
+        d.session_id,
+        d.driver_id,
+        d.rival_id,
+        d.lap_number,
+        d.sector,
+        d.delta_ms,
+        case d.sector
+            when 1 then l.sector1_ms
+            when 2 then l.sector2_ms
+            when 3 then l.sector3_ms
+        end as our_sector_ms,
+        case d.sector
+            when 1 then r.sector1_ms
+            when 2 then r.sector2_ms
+            when 3 then r.sector3_ms
+        end as rival_sector_ms,
+        l.tire_compound,
+        l.tire_temp_avg,
+        l.fuel_kg,
+        r.rival_compound
+    from int_delta_p d
+    join stg_laps l
+      on l.session_id = d.session_id
+     and l.driver_id  = d.driver_id
+     and l.lap_number = d.lap_number
+    join rival_sectors r
+      on r.session_id  = d.session_id
+     and r.rival_id   = d.rival_id
+     and r.lap_number = d.lap_number
+)
+
+select
+    session_id,
+    driver_id,
+    rival_id,
+    lap_number,
+    sector,
+    our_sector_ms,
+    rival_sector_ms,
+    delta_ms,
+    tire_compound,
+    rival_compound,
+    tire_temp_avg,
+    fuel_kg,
+    delta_ms / nullif(our_sector_ms, 0) as delta_pct,
+    case
+        when delta_ms < 0   then 'ahead'
+        when delta_ms < 50  then 'on-pace'
+        when delta_ms < 200 then 'slightly-behind'
+        else 'behind'
+    end as delta_bucket,
+    current_timestamp() as dbt_loaded_at
+from joined
+
+{% if is_incremental() %}
+where session_id not in (
+    select distinct session_id from {{ this }}
+)
+{% endif %}
+`
+
+const PIPELINE_ARTIFACTS: PipelineArtifact[] = [
+  { filename: '.github/workflows/ci-cd.yml', type: 'YAML', content: CI_CD_YAML },
+  { filename: 'k8s/telemetry-ingest.yaml', type: 'K8s manifest', content: K8S_TELEMETRY_INGEST_YAML },
+  { filename: 'k8s/spark-streaming.yaml', type: 'K8s manifest', content: K8S_SPARK_STREAMING_YAML },
+  { filename: 'k8s/hpa-telemetry.yaml', type: 'K8s manifest', content: K8S_HPA_TELEMETRY_YAML },
+  { filename: 'dbt/models/fct_delta_p_sector.sql', type: 'dbt SQL', content: DBT_FCT_DELTA_P_SECTOR_SQL },
+]
+
+const artifactTypeStyle: Record<PipelineArtifact['type'], string> = {
+  YAML: 'border-red-500/40 bg-red-500/10 text-red-300',
+  'K8s manifest': 'border-amber-500/40 bg-amber-500/10 text-amber-300',
+  'dbt SQL': 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+}
+
+function PipelineArtifactCard({ artifact }: { artifact: PipelineArtifact }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(artifact.content)
+      toast.success(`Copied ${artifact.filename}`, {
+        description: `${artifact.content.split('\n').length} lines · ${artifact.content.length} chars`,
+      })
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error('Clipboard unavailable in this context')
+    }
+  }
+
+  const handleDownload = () => {
+    try {
+      const isSql = artifact.filename.endsWith('.sql')
+      const blob = new Blob([artifact.content], {
+        type: isSql ? 'text/plain' : 'text/yaml',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = artifact.filename.split('/').pop() ?? 'artifact.yaml'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success(`Downloaded ${a.download}`)
+    } catch {
+      toast.error('Download failed — see browser console')
+    }
+  }
+
+  const lineCount = artifact.content.split('\n').length
+
+  return (
+    <div className="flex flex-col rounded-lg border border-border/50 bg-background/30 overflow-hidden">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-background/40 px-3 py-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileCode2 className="h-3.5 w-3.5 text-red-400 shrink-0" />
+          <span className="font-mono-nums text-[11px] text-foreground truncate">
+            {artifact.filename}
+          </span>
+        </div>
+        <Badge
+          variant="outline"
+          className={cn(
+            'font-mono-nums text-[9px] px-1.5 py-0 h-4 shrink-0',
+            artifactTypeStyle[artifact.type],
+          )}
+        >
+          {artifact.type}
+        </Badge>
+      </div>
+
+      {/* Action row */}
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/30 bg-background/20">
+        <span className="text-[9px] font-mono-nums text-muted-foreground uppercase tracking-wider">
+          {lineCount} lines · {artifact.content.length} bytes
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-[10px] border-border/60 bg-background/40 hover:bg-background/70"
+            onClick={handleCopy}
+          >
+            {copied ? (
+              <CheckCircle2 className="h-3 w-3 mr-1 text-emerald-400" />
+            ) : (
+              <Copy className="h-3 w-3 mr-1" />
+            )}
+            {copied ? 'Copied' : 'Copy'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-[10px] border-border/60 bg-background/40 hover:bg-background/70"
+            onClick={handleDownload}
+          >
+            <Download className="h-3 w-3 mr-1" />
+            Download
+          </Button>
+        </div>
+      </div>
+
+      {/* Code body */}
+      <pre className="text-[11px] font-mono-nums overflow-x-auto max-h-[280px] bg-background/60 rounded-md p-3 border-l-2 border-red-500/40 text-zinc-200 leading-relaxed">
+        <code>{artifact.content}</code>
+      </pre>
+    </div>
+  )
+}
+
+function PipelineArtifactsCard() {
+  return (
+    <Card className="border-border/50 bg-card/60 backdrop-blur p-4">
+      <SectionHeader
+        title="Pipeline Artifacts"
+        subtitle="GitHub Actions workflow + Kubernetes manifests (read-only)"
+        right={
+          <Badge
+            variant="outline"
+            className="border-red-500/40 bg-red-500/10 text-red-300 font-mono-nums"
+          >
+            <Terminal className="h-3 w-3 mr-1" />
+            {PIPELINE_ARTIFACTS.length} artifacts
+          </Badge>
+        }
+      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {PIPELINE_ARTIFACTS.map((a) => (
+          <PipelineArtifactCard key={a.filename} artifact={a} />
+        ))}
+      </div>
+      <Separator className="my-3 bg-border/50" />
+      <div className="flex items-center gap-2 text-[10px] font-mono-nums text-muted-foreground">
+        <Box className="h-3 w-3" />
+        <span>
+          Manifests are templated and rendered by Helm → applied via GitHub Actions
+          (OIDC, race-edge cluster). Commit SHA tags pinned at deploy time.
+        </span>
+      </div>
+    </Card>
+  )
+}
+

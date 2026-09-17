@@ -119,11 +119,29 @@
   .text-glow {
     text-shadow: 0 0 14px oklch(0.62 0.215 25 / 0.45);
   }
+  .text-glow-amber {
+    text-shadow: 0 0 12px oklch(0.78 0.16 80 / 0.4);
+  }
+  .text-glow-emerald {
+    text-shadow: 0 0 12px oklch(0.72 0.17 160 / 0.4);
+  }
   .grid-bg {
     background-image:
       linear-gradient(oklch(0.32 0.01 264 / 0.18) 1px, transparent 1px),
       linear-gradient(90deg, oklch(0.32 0.01 264 / 0.18) 1px, transparent 1px);
     background-size: 22px 22px;
+  }
+  .grid-bg-fine {
+    background-image:
+      linear-gradient(oklch(0.32 0.01 264 / 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(0.32 0.01 264 / 0.1) 1px, transparent 1px);
+    background-size: 12px 12px;
+  }
+  .carbon-fiber {
+    background-color: oklch(0.205 0.008 264);
+    background-image:
+      radial-gradient(circle at 25% 25%, oklch(0.25 0.01 264 / 0.4) 0%, transparent 50%),
+      radial-gradient(circle at 75% 75%, oklch(0.16 0.006 264 / 0.6) 0%, transparent 50%);
   }
   .scanline {
     position: relative;
@@ -134,6 +152,19 @@
     inset: 0;
     pointer-events: none;
     background: repeating-linear-gradient(0deg, transparent 0 3px, oklch(0 0 0 / 0.06) 3px 4px);
+  }
+  .card-hover {
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    border-color: oklch(0.62 0.215 25 / 0.4);
+    box-shadow: 0 8px 24px -8px oklch(0.62 0.215 25 / 0.2);
+  }
+  .glass {
+    background: oklch(0.205 0.008 264 / 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
   @keyframes pulse-red {
     0%, 100% { box-shadow: 0 0 0 0 oklch(0.62 0.215 25 / 0.5); }
@@ -149,4 +180,46 @@
   .blink {
     animation: blink 1.2s step-end infinite;
   }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .shimmer {
+    background: linear-gradient(90deg, transparent, oklch(0.62 0.215 25 / 0.15), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 2.5s linear infinite;
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .slide-up {
+    animation: slide-up 0.35s ease-out;
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .fade-in {
+    animation: fade-in 0.4s ease-out;
+  }
+  @keyframes speed-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  .speed-pulse {
+    animation: speed-pulse 0.8s ease-in-out infinite;
+  }
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .ticker {
+    animation: ticker 30s linear infinite;
+  }
+  .divider-glow {
+    background: linear-gradient(90deg, transparent, oklch(0.62 0.215 25 / 0.4), transparent);
+    height: 1px;
+  }
 }
+

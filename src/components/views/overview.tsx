@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useTelemetrySocket } from '@/hooks/use-telemetry-socket'
 import { useAppStore } from '@/lib/store'
-import { StatCard, SectionHeader, DriverChip, StatusBadge, MiniTrack } from '@/components/shared'
+import { StatCard, SectionHeader, DriverChip, StatusBadge, TrackMap } from '@/components/shared'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -42,10 +42,10 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
   return (
     <div className="space-y-6">
       {/* Hero banner */}
-      <Card className="relative overflow-hidden border-red-500/30 bg-gradient-to-br from-card via-card to-red-950/30">
+      <Card className="relative overflow-hidden border-red-500/30 bg-gradient-to-br from-card via-card to-red-950/30 slide-up">
         <div className="absolute inset-0 grid-bg opacity-40" />
-        <div className="absolute -right-10 -top-10 opacity-10 w-64 h-64">
-          <MiniTrack corners={19} active />
+        <div className="absolute -right-12 -top-12 opacity-15 pointer-events-none">
+          <TrackMap circuitName="Singapore" active size={280} />
         </div>
         <div className="relative p-5 sm:p-6">
           <div className="flex items-center gap-2 mb-1">
@@ -53,6 +53,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
               LIVE · RACE WEEKEND
             </Badge>
             <span className="text-[11px] text-muted-foreground font-mono-nums">ROUND 2 · SINGAPORE GP</span>
+            <span className="text-[11px] text-amber-400 font-mono-nums hidden sm:inline">· MARINA BAY STREET CIRCUIT</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Performance Intelligence <span className="text-red-400 text-glow">Command Center</span>
@@ -69,10 +70,35 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
             ))}
           </div>
         </div>
+        {/* Live ticker tape */}
+        <div className="relative border-t border-red-500/20 bg-black/20 overflow-hidden">
+          <div className="flex ticker whitespace-nowrap py-1.5 text-[10px] font-mono-nums text-muted-foreground">
+            {Array.from({ length: 2 }).map((_, dup) => (
+              <span key={dup} className="flex items-center gap-6 px-3">
+                <span className="text-emerald-400">● PIPELINE NOMINAL</span>
+                <span className="text-border">|</span>
+                <span>INGEST 6,000 Hz · 100+ CHANNELS · 2 CARS</span>
+                <span className="text-border">|</span>
+                <span className="text-amber-400">SPARK 5s AGG · 4 WORKERS</span>
+                <span className="text-border">|</span>
+                <span>SNOWFLAKE WH · P95 1.18s</span>
+                <span className="text-border">|</span>
+                <span className="text-emerald-400">ZERO DATA-LOSS GUARANTEE</span>
+                <span className="text-border">|</span>
+                <span>dbt MODELS · 12 MATERIALISED</span>
+                <span className="text-border">|</span>
+                <span className="text-red-400">v2.4.1 CANARY 100%</span>
+                <span className="text-border">|</span>
+                <span>K8s race-edge · 8 services · 22 pods</span>
+                <span className="text-border">|</span>
+              </span>
+            ))}
+          </div>
+        </div>
       </Card>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 slide-up">
         <StatCard
           label="Pipeline Uptime"
           value={(healthQ.data?.pipelineUptimePct ?? 99.9).toFixed(2)}
@@ -110,9 +136,11 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
         />
       </div>
 
+      <div className="divider-glow" />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Live timing leaderboard */}
-        <Card className="lg:col-span-2 border-border/50 bg-card/60">
+        <Card className="lg:col-span-2 border-border/50 bg-card/60 card-hover">
           <SectionHeader
             title="Live Timing — Singapore GP"
             subtitle="Real-time Kafka → Spark streaming aggregation (5s windows)"
@@ -141,7 +169,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
               </thead>
               <tbody className="font-mono-nums">
                 {liveTiming.map((d, i) => (
-                  <tr key={d.code} className={cn('border-b border-border/30', d.isRival ? '' : 'bg-red-500/5')}>
+                  <tr key={d.code} className={cn('border-b border-border/30 transition-colors hover:bg-red-500/5', d.isRival ? '' : 'bg-red-500/5')}>
                     <td className="px-3 py-2 font-bold text-muted-foreground">{i + 1}</td>
                     <td className="px-3 py-2">
                       <span className={cn('font-bold', d.isRival ? 'text-amber-300' : 'text-red-300')}>{d.code}</span>
@@ -181,7 +209,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
         </Card>
 
         {/* Alerts */}
-        <Card className="border-border/50 bg-card/60">
+        <Card className="border-border/50 bg-card/60 card-hover">
           <SectionHeader title="Active Alerts" subtitle="Auto-escalation on" />
           <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
             {(alertsQ.data?.alerts ?? []).slice(0, 8).map((a: any) => (
@@ -212,7 +240,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Resource health */}
-        <Card className="border-border/50 bg-card/60">
+        <Card className="border-border/50 bg-card/60 card-hover">
           <SectionHeader title="Infrastructure Health" subtitle="K8s cluster · race-edge region" />
           <div className="space-y-2">
             <ResourceBar label="CPU" value={healthQ.data?.resourceAverages?.cpuPct ?? 42} unit="%" icon={<Cpu className="h-3.5 w-3.5" />} />
@@ -235,7 +263,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
         </Card>
 
         {/* Query latency trend */}
-        <Card className="border-border/50 bg-card/60">
+        <Card className="border-border/50 bg-card/60 card-hover">
           <SectionHeader title="Query Latency (Snowflake + dbt)" subtitle="<2s target across 5-yr history" />
           <div className="h-[180px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -258,7 +286,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
         </Card>
 
         {/* Recent deployments */}
-        <Card className="border-border/50 bg-card/60">
+        <Card className="border-border/50 bg-card/60 card-hover">
           <SectionHeader title="Recent Deployments" subtitle="Canary → 100% rollout" right={
             <button onClick={() => setActiveView('devops')} className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1">
               DevOps <ChevronRight className="h-3 w-3" />

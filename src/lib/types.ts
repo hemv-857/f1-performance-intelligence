@@ -114,3 +114,4 @@ export type ViewKey =
   | 'analytics'
   | 'devops'
   | 'raceops'
+  | 'pitbox'

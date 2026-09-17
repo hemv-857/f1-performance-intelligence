@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 import {
   Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, ReferenceArea, ReferenceLine, ComposedChart, Area,
 } from 'recharts'
-import { Download, Layers, GitCompare, Gauge, Radio, AlertCircle, Activity, Zap } from 'lucide-react'
+import { Download, Layers, GitCompare, Gauge, Radio, AlertCircle, Activity, Zap, Loader2 } from 'lucide-react'
 
 const CHANNEL_GROUPS = [
   { group: 'engine', label: 'Engine & Drivetrain', channels: ['speed', 'throttle', 'brake', 'gear', 'rpm'] },
@@ -29,6 +29,29 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
   const [activeChannel, setActiveChannel] = useState('speed')
   const [group, setGroup] = useState('engine')
   const [compareChannel, setCompareChannel] = useState('tire_fl_temp')
+  const [exporting, setExporting] = useState(false)
+
+  const handleExportPdf = async () => {
+    if (!selectedSessionId) return
+    setExporting(true)
+    try {
+      const res = await fetch(`/api/reports/pdf/${selectedSessionId}?driverId=${lapAOverride ?? ''}&rivalId=${lapBOverride ?? ''}&channel=${compareChannel}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `RB-Report-${sessions.find((s) => s.id === selectedSessionId)?.type ?? 'session'}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('PDF export failed', e)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   // session detail — always fetch when a session is selected (used by overlay mode)
   const sessionQ = useQuery({
@@ -122,8 +145,15 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
               </SelectContent>
             </Select>
             {mode === 'overlay' && (
-              <Button variant="outline" size="sm" className="h-8 text-xs">
-                <Download className="h-3.5 w-3.5 mr-1" /> Export PDF
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs border-red-500/40 text-red-300 hover:bg-red-500/10"
+                disabled={!selectedSessionId || exporting}
+                onClick={handleExportPdf}
+              >
+                {exporting ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
+                {exporting ? 'Generating…' : 'Export PDF'}
               </Button>
             )}
           </div>
@@ -162,7 +192,7 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
           </Card>
 
           {/* live multi-driver chart */}
-          <Card className="border-border/50 bg-card/60">
+          <Card className="border-border/50 bg-card/60 card-hover">
             <SectionHeader
               title={`Live ${activeChannel} — all drivers`}
               subtitle="10 Hz push from Spark streaming · 1 kHz source (downsampled for web)"
@@ -269,7 +299,7 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
           </Card>
 
           {/* overlay chart */}
-          <Card className="border-border/50 bg-card/60">
+          <Card className="border-border/50 bg-card/60 card-hover">
             <SectionHeader
               title="Lap Trace Overlay"
               subtitle={
@@ -358,7 +388,7 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
 
           {/* Sector splits */}
           {sessionQ.data && ourDriver && rivalDriver && (
-            <Card className="border-border/50 bg-card/60">
+            <Card className="border-border/50 bg-card/60 card-hover">
               <SectionHeader title="Sector Splits — best laps" subtitle={`${ourDriver.driver.code} vs ${rivalDriver.driver.code}`} />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3">
                 {[1, 2, 3].map((sec) => {
