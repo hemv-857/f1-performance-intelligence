@@ -1,0 +1,187 @@
+// Prisma schema for F1 Performance Intelligence Platform (Racing Bulls)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Master data ----
+
+model Driver {
+  id          String   @id @default(cuid())
+  code        String   @unique // e.g. "TSU", "LAW", "VER"
+  name        String
+  team        String
+  number      Int
+  isRival     Boolean  @default(false) // false = our drivers, true = rivals
+  nationality String?
+  createdAt   DateTime @default(now())
+
+  laps        Lap[]
+  alerts      Alert[]
+}
+
+model Circuit {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  country     String
+  trackLength Float    // km
+  lapCount     Int
+  sectors      Int     @default(3)
+  corners      Int
+  image       String?  // track map url
+  createdAt   DateTime @default(now())
+
+  sessions    Session[]
+}
+
+model Channel {
+  id          String   @id @default(cuid())
+  key         String   @unique // "brake_fl_temp", "throttle", "speed"
+  label       String
+  group       String   // "brakes", "suspension", "aero", "engine", "power_unit"
+  unit        String   // "C", "%", "km/h", "bar"
+  sampleHz    Int      @default(1000)
+  minOk       Float?
+  maxOk       Float?
+  createdAt   DateTime @default(now())
+
+  samples     TelemetrySample[]
+}
+
+// ---- Sessions / laps / telemetry ----
+
+model Session {
+  id          String   @id @default(cuid())
+  circuitId   String
+  circuit     Circuit  @relation(fields: [circuitId], references: [id])
+  round       Int      // championship round
+  type        String   // "FP1" | "FP2" | "FP3" | "Q" | "RACE"
+  date        DateTime
+  airTemp     Float?
+  trackTemp   Float?
+  condition   String?  // "dry" | "wet" | "intermediate"
+  status      String   @default("completed") // "scheduled" | "live" | "completed"
+  createdAt   DateTime @default(now())
+
+  laps        Lap[]
+}
+
+model Lap {
+  id          String   @id @default(cuid())
+  sessionId   String
+  session     Session  @relation(fields: [sessionId], references: [id])
+  driverId    String
+  driver      Driver   @relation(fields: [driverId], references: [id])
+  lapNumber   Int
+  lapTimeMs   Int      // lap time in milliseconds
+  sector1Ms   Int?
+  sector2Ms   Int?
+  sector3Ms   Int?
+  tireCompound String? // "soft" | "medium" | "hard" | "inter" | "wet"
+  tireTempAvg Float?
+  fuelKg      Float?
+  drsCount    Int      @default(0)
+  isValid     Boolean  @default(true)
+  isFastest   Boolean  @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  samples     TelemetrySample[]
+}
+
+model TelemetrySample {
+  id          String   @id @default(cuid())
+  lapId       String
+  lap         Lap      @relation(fields: [lapId], references: [id])
+  channelId   String
+  channel     Channel  @relation(fields: [channelId], references: [id])
+  distanceM   Int      // distance along track in meters (0..trackLength*1000)
+  value       Float
+  ts          Int      // relative ms from lap start
+  createdAt   DateTime @default(now())
+
+  @@index([lapId, channelId])
+  @@index([channelId])
+}
+
+// ---- Analytics / dbt-style derived models (materialised) ----
+
+model DeltaRecord {
+  // delta-P vs a rival per lap (positive = we are slower)
+  id          String   @id @default(cuid())
+  sessionId   String
+  driverId    String
+  rivalId     String
+  lapNumber   Int
+  deltaMs     Float
+  sector      Int?     // null = whole lap
+  channelKey  String?  // null = laptime delta, else channel-specific delta
+  createdAt   DateTime @default(now())
+
+  @@index([sessionId, driverId, rivalId])
+}
+
+// ---- DevOps ----
+
+model Deployment {
+  id          String   @id @default(cuid())
+  version     String   @unique // v2.4.0
+  feature     String
+  environment String   @default("production") // staging | canary | production
+  canaryPct   Int      @default(0) // 0 | 10 | 50 | 100
+  status      String   @default("pending") // pending | running | success | failed | rolled_back
+  triggeredBy String
+  commitSha   String
+  testsPassed Int      @default(0)
+  testsFailed Int      @default(0)
+  regressionScore Float? // vs historical telemetry
+  createdAt   DateTime @default(now())
+  rolledBackAt DateTime?
+}
+
+model Alert {
+  id          String   @id @default(cuid())
+  severity    String   // "info" | "warning" | "critical"
+  source      String   // "telemetry" | "spark" | "kafka" | "k8s" | "snowflake"
+  title       String
+  message     String
+  driverId    String?
+  driver      Driver?  @relation(fields: [driverId], references: [id])
+  status      String   @default("active") // active | acknowledged | resolved
+  autoAction  String?  // playbook action triggered
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+}
+
+// ---- Low-code dashboard templates ----
+
+model DashboardTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  owner       String
+  discipline  String   // "aero" | "chassis" | "strategy" | "power_unit"
+  querySql    String   // SQL template (parameterised)
+  chartType   String   // "line" | "bar" | "heatmap" | "scatter" | "track3d" | "gauge"
+  params      String   // JSON string of param schema
+  schedule    String?  // cron for auto-run
+  isFavorite  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  lastRunAt   DateTime?
+}
+
+// ---- Incident playbook ----
+
+model IncidentRun {
+  id          String   @id @default(cuid())
+  playbook    String   // "kill-duplicate-workers" | "failover-secondary" | "rollback-deploy"
+  trigger     String   // "latency-spike" | "data-loss-risk" | "deploy-failed"
+  status      String   @default("resolved") // running | resolved | failed
+  actionsJson String   // JSON array of executed steps
+  durationMs  Int
+  createdAt   DateTime @default(now())
+}
