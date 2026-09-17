@@ -115,3 +115,4 @@ export type ViewKey =
   | 'devops'
   | 'raceops'
   | 'pitbox'
+  | 'strategy'

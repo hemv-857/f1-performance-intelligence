@@ -10,6 +10,8 @@ import { AnalyticsView } from '@/components/views/analytics'
 import { DevOpsView } from '@/components/views/devops'
 import { RaceOpsView } from '@/components/views/race-ops'
 import { PitBoxView } from '@/components/views/pitbox'
+import { StrategyView } from '@/components/views/strategy'
+import { AiEngineerPanel } from '@/components/ai-engineer-panel'
 import {
   Activity,
   Gauge,
@@ -19,6 +21,7 @@ import {
   ShieldAlert,
   Radio,
   CircleDot,
+  GitBranch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +37,7 @@ const NAV = [
   { key: 'devops', label: 'DevOps', icon: Workflow, desc: 'CI/CD · canary · rollback' },
   { key: 'raceops', label: 'Race Ops', icon: ShieldAlert, desc: 'Health · monitoring · playbook' },
   { key: 'pitbox', label: 'Pit-Box', icon: Radio, desc: 'Strategist mobile view' },
+  { key: 'strategy', label: 'Strategy', icon: GitBranch, desc: 'Pit windows · tire-age · stint planner' },
 ] as const
 
 export function AppShell() {
@@ -96,7 +100,8 @@ export function AppShell() {
             <PipelineStatus socket={socket} />
           </div>
 
-          <div className="md:hidden ml-auto">
+          <div className="md:hidden ml-auto flex items-center gap-2">
+            <AiEngineerPanel />
             <LivePill connected={socket.connected} />
           </div>
 
@@ -105,6 +110,7 @@ export function AppShell() {
             <Badge variant="outline" className="font-mono-nums text-[10px] border-emerald-500/40 text-emerald-300">
               R2 · SINGAPORE
             </Badge>
+            <AiEngineerPanel />
           </div>
         </div>
       </header>
@@ -188,6 +194,7 @@ export function AppShell() {
             {activeView === 'devops' && <DevOpsView />}
             {activeView === 'raceops' && <RaceOpsView socket={socket} />}
             {activeView === 'pitbox' && <PitBoxView socket={socket} />}
+            {activeView === 'strategy' && <StrategyView socket={socket} />}
           </div>
         </main>
       </div>

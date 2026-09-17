@@ -248,28 +248,75 @@ export function TelemetryViewer({ socket }: { socket: ReturnType<typeof useTelem
             </div>
           </Card>
 
-          {/* live numeric channels grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {CHANNEL_GROUPS.flatMap((g) => g.channels).slice(0, 12).map((c) => {
-              const tsu = liveTicks['TSU']?.channels[c]
-              const ver = liveTicks['VER']?.channels[c]
-              const delta = tsu != null && ver != null ? tsu - ver : 0
-              return (
-                <Card key={c} className="border-border/50 bg-card/60 p-3">
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums truncate">{c.replace(/_/g, ' ')}</div>
-                  <div className="mt-1 font-mono-nums text-xl font-bold text-foreground">
-                    {tsu != null ? tsu.toFixed(c.includes('temp') || c.includes('pressure') || c.includes('flow') ? 1 : 0) : '—'}
-                  </div>
-                  <div className="mt-1 text-[10px] text-muted-foreground font-mono-nums flex items-center justify-between">
-                    <span>TSU</span>
-                    <span className={cn(Math.abs(delta) < 1 ? 'text-zinc-400' : delta > 0 ? 'text-red-400' : 'text-emerald-400')}>
-                      Δ{delta >= 0 ? '+' : ''}{delta.toFixed(1)}
-                    </span>
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
+          {/* live numeric channels grid — with anomaly detection */}
+          <Card className="border-border/50 bg-card/60 p-3">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-medium flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
+                <span>Live channel anomaly detection</span>
+              </div>
+              <span className="text-[10px] text-muted-foreground font-mono-nums">
+                {(() => {
+                  const anomalies = CHANNEL_GROUPS.flatMap((g) => g.channels).slice(0, 12).filter((c) => {
+                    const v = liveTicks['TSU']?.channels[c]
+                    return v != null && isAnomaly(c, v)
+                  })
+                  return anomalies.length === 0
+                    ? '✓ ALL CHANNELS NOMINAL'
+                    : `${anomalies.length} ANOMALY${anomalies.length > 1 ? 'S' : ''} DETECTED`
+                })()}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {CHANNEL_GROUPS.flatMap((g) => g.channels).slice(0, 12).map((c) => {
+                const tsu = liveTicks['TSU']?.channels[c]
+                const ver = liveTicks['VER']?.channels[c]
+                const delta = tsu != null && ver != null ? tsu - ver : 0
+                const anomalous = tsu != null && isAnomaly(c, tsu)
+                const range = getChannelRange(c)
+                return (
+                  <Card
+                    key={c}
+                    className={cn(
+                      'border p-3 transition-all relative overflow-hidden',
+                      anomalous
+                        ? 'border-red-500/60 bg-red-500/10 pulse-red'
+                        : 'border-border/50 bg-card/60 card-hover'
+                    )}
+                  >
+                    {anomalous && (
+                      <div className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-red-500 blink" />
+                    )}
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums truncate">
+                      {c.replace(/_/g, ' ')}
+                    </div>
+                    <div className={cn(
+                      'mt-1 font-mono-nums text-xl font-bold',
+                      anomalous ? 'text-red-300 text-glow' : 'text-foreground'
+                    )}>
+                      {tsu != null ? tsu.toFixed(c.includes('temp') || c.includes('pressure') || c.includes('flow') ? 1 : 0) : '—'}
+                    </div>
+                    <div className="mt-1 text-[10px] text-muted-foreground font-mono-nums flex items-center justify-between">
+                      <span>TSU</span>
+                      <span className={cn(
+                        Math.abs(delta) < 1 ? 'text-zinc-400' : delta > 0 ? 'text-red-400' : 'text-emerald-400'
+                      )}>
+                        Δ{delta >= 0 ? '+' : ''}{delta.toFixed(1)}
+                      </span>
+                    </div>
+                    {range && (
+                      <div className="mt-1.5 h-0.5 rounded-full bg-zinc-800 overflow-hidden">
+                        <div
+                          className={cn('h-full transition-all', anomalous ? 'bg-red-500' : 'bg-emerald-500/60')}
+                          style={{ width: `${Math.min(100, Math.max(0, ((tsu ?? range.min) - range.min) / (range.max - range.min) * 100))}%` }}
+                        />
+                      </div>
+                    )}
+                  </Card>
+                )
+              })}
+            </div>
+          </Card>
         </>
       ) : (
         <>
@@ -443,4 +490,44 @@ function generateInsight(data: any) {
   const sign = topZone.delta > 0 ? 'higher' : 'lower'
   const cause = data.channel.group === 'brakes' ? 'aero duct airflow or brake-bias setup' : data.channel.group === 'aero' ? 'tire thermal balance / corner entry speed' : data.channel.group === 'suspension' ? 'ride height or bump-rebound mapping' : 'power-unit mapping'
   return `At ~${topZone.distance}m, ${driver}'s ${ch} is ${delta} ${unit} ${sign} than ${rival}'s. Across the top problem zones this pattern repeats at braking/apex bins — investigate ${cause}.`
+}
+
+// ---- Anomaly detection helpers ----
+const CHANNEL_RANGES: Record<string, { min: number; max: number; unit: string }> = {
+  speed: { min: 0, max: 340, unit: 'km/h' },
+  throttle: { min: 0, max: 100, unit: '%' },
+  brake: { min: 0, max: 100, unit: '%' },
+  gear: { min: 1, max: 8, unit: '' },
+  rpm: { min: 0, max: 13000, unit: 'rpm' },
+  tire_fl_temp: { min: 80, max: 120, unit: '°C' },
+  tire_fr_temp: { min: 80, max: 120, unit: '°C' },
+  tire_rl_temp: { min: 80, max: 120, unit: '°C' },
+  tire_rr_temp: { min: 80, max: 120, unit: '°C' },
+  suspension_fl: { min: -50, max: 50, unit: 'mm' },
+  suspension_fr: { min: -50, max: 50, unit: 'mm' },
+  boost_pressure: { min: 0, max: 4, unit: 'bar' },
+  fuel_flow: { min: 0, max: 110, unit: 'kg/h' },
+  drs: { min: 0, max: 1, unit: '' },
+}
+
+function getChannelRange(key: string): { min: number; max: number; unit: string } | null {
+  return CHANNEL_RANGES[key] ?? null
+}
+
+function isAnomaly(key: string, value: number): boolean {
+  const r = CHANNEL_RANGES[key]
+  if (!r) return false
+  // Tire temps: anomaly if outside 80-120 (above 115 = critical, below 75 = cold)
+  if (key.startsWith('tire_')) return value > 115 || value < 75
+  // Brake temp proxy: if brake pressure > 95% sustained, flag
+  if (key === 'brake') return value > 98
+  // RPM redline
+  if (key === 'rpm') return value > 12500
+  // Boost pressure over-boost
+  if (key === 'boost_pressure') return value > 3.8
+  // Fuel flow over limit (110 kg/h FIA limit)
+  if (key === 'fuel_flow') return value > 105
+  // Suspension travel extreme
+  if (key.startsWith('suspension_')) return Math.abs(value) > 40
+  return false
 }
