@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import {
   Bell, BellRing, AlertTriangle, CheckCircle2, Info, X, Trash2, Volume2, VolumeX, Monitor,
 } from 'lucide-react'
+import { settingsStore } from '@/components/settings-drawer'
 
 export interface Notification {
   id: string
@@ -85,16 +86,18 @@ export function pushNotification(n: Omit<Notification, 'id' | 'ts' | 'read'>): v
   emit()
   persist()
   fireDesktop(full)
-  // also fire a sonner toast for immediate feedback
-  try {
-    import('sonner').then(({ toast }) => {
-      const opts = { description: n.message, duration: n.severity === 'critical' ? 8000 : 4000 }
-      if (n.severity === 'critical') toast.error(n.title, opts)
-      else if (n.severity === 'warning') toast.warning(n.title, opts)
-      else if (n.severity === 'success') toast.success(n.title, opts)
-      else toast.info(n.title, opts)
-    })
-  } catch { /* ignore */ }
+  // also fire a sonner toast for immediate feedback (gated by soundEnabled setting — when off, skip the toast, just record silently)
+  if (settingsStore.state.soundEnabled) {
+    try {
+      import('sonner').then(({ toast }) => {
+        const opts = { description: n.message, duration: n.severity === 'critical' ? 8000 : 4000 }
+        if (n.severity === 'critical') toast.error(n.title, opts)
+        else if (n.severity === 'warning') toast.warning(n.title, opts)
+        else if (n.severity === 'success') toast.success(n.title, opts)
+        else toast.info(n.title, opts)
+      })
+    } catch { /* ignore */ }
+  }
 }
 
 /** Request browser desktop notification permission. Returns the resulting permission state. */

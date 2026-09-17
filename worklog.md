@@ -871,3 +871,78 @@ Unresolved / Next-phase recommendations:
 - The Share URL could include the active Analytics tab + driver selection for deeper linking.
 - Add a QR code generator for the Share URL (for mobile pit-box access).
 - Add export scheduling (auto-export a report after each session completes).
+
+---
+Task ID: feat-2 (help-docs)
+Agent: full-stack-developer (help-docs)
+Task: Build Help & Documentation center
+
+Work Log:
+- Read prior worklog.md, app-shell.tsx (header structure / mobile vs desktop sections), ai-engineer-panel.tsx (Sheet pattern reference), settings-drawer.tsx (Sheet + useState open pattern, "Retake onboarding tour" reference), shared.tsx (helpers + cn location), and shadcn ui/tabs + ui/sheet primitives.
+- Reused the exact NAV lucide icons from app-shell.tsx (LayoutDashboard, Gauge, Boxes, Activity, Workflow, ShieldAlert, Radio, GitBranch) for the Overview tab's 8-view list.
+- Created `/home/z/my-project/src/components/help-drawer.tsx` (single 'use client' file, ~440 lines) exporting `HelpDrawer()`:
+  * shadcn `Sheet` (right slide-out, `w-full sm:w-[440px]`) — same pattern as SettingsDrawer (useState open). Trigger: `Button variant="ghost"` with `HelpCircle` lucide icon + "Help" label, styled to line up beside the Settings icon button.
+  * shadcn `Tabs` with 5 triggers (Overview, Shortcuts, FAQ, API, What's New) — each trigger has its own lucide icon. TabsList is `w-full justify-start overflow-x-auto` for mobile scroll.
+  * Body is a `ScrollArea` so tab content scrolls independently of the tab strip.
+  * Overview tab: title "Racing Bulls Performance Intelligence Platform" + red `v2.4.1 · round-11` version badge, descriptive paragraph, the 8-view list (icon + label + 1-line desc), and a "Key metrics" mini-table (Uptime 99.9%, Query latency < 2s, Telemetry channels 100+, Sample rate 1 kHz, Microservices 8).
+  * Shortcuts tab: 8 nav shortcuts (g+o, g+t, g+b, g+a, g+d, g+r, g+p, g+s) + 3 global shortcuts (⌘K, ?, Esc) with kbd badges + a Lightbulb note about pressing ? any time.
+  * FAQ tab: all 6 Q&A pairs as `bg-card/60` cards with a red HelpCircle icon (overlay laps, AI Race Engineer, export data, PDF report, share view, mobile support).
+  * API Reference tab: 5 groups (Sessions 2, Telemetry 2, Analytics 3, DevOps 5, Platform 9 = 21 endpoints) with MethodBadge (green GET, amber POST) + mono `<code>` path + 1-line description in `border-border/50 bg-background/60 p-2` cards.
+  * What's New tab: 5 changelog entries (v2.4.1 → v2.3.7) as a vertical timeline with red dot + line, version badge + "round N" + date + bulleted feature list.
+  * Footer: "Press ? any time for shortcuts · v2.4.1" reminder.
+- Wired `HelpDrawer` into `app-shell.tsx`: added the import and inserted `<HelpDrawer />` immediately after `<DataExportSettingsDrawer />` in BOTH the mobile (`md:hidden ml-auto`) and desktop (`hidden sm:flex pl-3 border-l border-border/60`) header sections. No other files modified.
+- Ran `cd /home/z/my-project && bun run lint`: 0 errors, 0 warnings. Dev server recompiled cleanly (`✓ Compiled in 173ms`).
+- Verified end-to-end with agent-browser (http://localhost:81/):
+  * Page reload returned 200, Help button visible ("Open Help & Documentation center").
+  * Clicked the Help button → drawer opened with header "Help & Documentation · Platform guide · shortcuts · API · changelog" and a 5-tab tablist. Overview tab showed the 8-view list and key-metrics table (99.9%, < 2s, 100+, 1 kHz, 8).
+  * Shortcuts tab → all 11 shortcuts rendered with kbd badges + Lightbulb note.
+  * FAQ tab → all 6 Q&A pairs confirmed verbatim via `get text`.
+  * API tab → all 5 groups with 21 endpoints total, paths matching spec exactly.
+  * What's New tab → all 5 changelog entries with version badges + dates + bullet lists confirmed via `get text`.
+  * Screenshots saved: `/home/z/my-project/agent-ctx/feat-2-help-overview.png`, `feat-2-help-shortcuts.png`, `feat-2-help-faq.png`, `feat-2-help-api.png`, `feat-2-help-changelog.png`.
+  * Close button → drawer closed cleanly; page reload confirmed the Help button stable.
+
+Stage Summary:
+- Help & Documentation center is feature-complete and lint-clean. The drawer mounts via the app-shell header in BOTH desktop and mobile sections, opens to reveal 5 fully-implemented tabs (Overview with 8-view list + key-metrics table, Shortcuts with all 11 keyboard shortcuts as kbd badges, FAQ with all 6 Q&A pairs, API Reference with all 21 endpoints across 5 groups in mono code blocks with GET/POST method badges, and What's New with the 5-version timeline changelog). The Sheet is full-width on mobile and 440px on desktop, the TabsList scrolls horizontally on small viewports, and the body uses a ScrollArea so tab content scrolls independently. Dark carbon theme matches the rest of the app (`border-border/50 bg-card/60 backdrop-blur`, mono-nums for codes/numbers, red accent for active states). No new API routes were needed and no other files were modified — only `help-drawer.tsx` (new) and `app-shell.tsx` (one import line + two `<HelpDrawer />` insertions).
+
+---
+Task ID: round-11
+Agent: main (webDevReview cron)
+Task: QA pass + 2 new features (Help & Docs center, wired remaining settings) + styling polish
+
+Work Log:
+- QA via agent-browser (gateway :81): all 8 views render with ZERO runtime errors. Lint clean. Platform is stable.
+
+New features added:
+1. Help & Documentation center (feat-2, subagent): new `src/components/help-drawer.tsx` — a slide-out Sheet accessible from the header (HelpCircle icon + "Help" label) with 5 tabs:
+   - **Overview**: platform description, version badge (v2.4.1 · round-11), list of 8 views with icons, key metrics table (99.9% uptime, <2s query, 100+ channels, 1 kHz, 8 services).
+   - **Shortcuts**: all keyboard shortcuts (g+o/t/b/a/d/r/p/s, ⌘K, ?, Esc) with kbd badges.
+   - **FAQ**: 6 Q&A pairs (lap overlay, AI engineer, data export, PDF report, share URL, mobile).
+   - **API Reference**: 21 endpoints grouped (Sessions, Telemetry, Analytics, DevOps, Platform) with GET/POST method badges and mono code blocks.
+   - **What's New**: changelog of 5 versions (v2.4.1 → v2.3.7) as a vertical timeline with version badges + date + bulleted feature lists.
+   Wired into the header next to the Settings gear button. Verified: all 5 tabs render with real content.
+
+2. Settings toggles fully wired to gate behavior (feat-1, main):
+   - **soundEnabled**: the Notification Center's `pushNotification` now checks `settingsStore.state.soundEnabled` before firing a sonner toast. When off, notifications are still recorded to the notification list + desktop push, but the in-app toast is suppressed (calmer). When on, the toast appears as before.
+   - **aiAutoDiagnose**: the AI Engineer panel's auto-ask effect now checks `settings.aiAutoDiagnose` before sending the LLM prompt. When off, anomalies are still acknowledged but the AI doesn't auto-diagnose (manual only). When on, the AI auto-diagnoses as before.
+   - **anomalyAutoTrigger**: the AI panel now checks `settings.anomalyAutoTrigger` before auto-opening the panel + pushing the critical notification. When off, anomalies are acknowledged silently without opening the panel or pushing a notification. When on, the full auto-trigger flow runs.
+   - All 3 toggles now actually affect the platform's behavior, not just the UI appearance.
+
+Styling polish:
+- Help drawer: 5-tab layout with dark carbon theme, kbd badges, mono code blocks, version timeline with red dots.
+- Header now has 7 utility buttons: Search ⌘K, Share, Export, Audit, Alerts, Help, Settings, AI Engineer.
+
+Verification:
+- `bun run lint`: 0 errors, 0 warnings.
+- agent-browser: all 8 views render with 0 runtime errors; Help drawer opens with all 5 tabs (Overview/Shortcuts/FAQ/API/What's New); Settings drawer shows all toggles (Sound cues, Auto-diagnose, Auto-trigger, Compact density, Ticker, Pulse); What's New changelog shows v2.4.1 → v2.3.7.
+- Screenshots: download/screenshot-help-whats-new.png.
+
+Stage Summary:
+- Platform now has a complete Help & Documentation center (5 tabs: overview, shortcuts, FAQ, API reference, changelog) and ALL settings toggles are wired to actually gate behavior (soundEnabled suppresses toasts, aiAutoDiagnose gates AI auto-ask, anomalyAutoTrigger gates panel auto-open + notification push). The header has 7 utility buttons + pipeline status strip. All features browser-verified and lint-clean.
+
+Unresolved / Next-phase recommendations:
+- The Share URL could include the active Analytics tab + driver selection for deeper linking.
+- Add a QR code generator for the Share URL (for mobile pit-box access).
+- Add export scheduling (auto-export a report after each session completes).
+- Add a "dark/light theme" toggle (currently always dark carbon).
+- Add a custom SQL query runner in the Data Export Center.

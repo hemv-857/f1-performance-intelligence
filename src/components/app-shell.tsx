@@ -19,6 +19,7 @@ import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter, pushNotification } from '@/components/notification-center'
 import { DataExportSettingsDrawer, useSettingsEffect } from '@/components/settings-drawer'
 import { OnboardingTour } from '@/components/onboarding-tour'
+import { HelpDrawer } from '@/components/help-drawer'
 import {
   Activity,
   Gauge,
@@ -224,6 +225,7 @@ export function AppShell() {
             <DataExportDrawer />
             <AuditLogDrawer />
             <DataExportSettingsDrawer />
+            <HelpDrawer />
             <AiEngineerPanel />
             <LivePill connected={socket.connected} />
           </div>
@@ -260,6 +262,7 @@ export function AppShell() {
             <AuditLogDrawer />
             <NotificationCenter />
             <DataExportSettingsDrawer />
+            <HelpDrawer />
             <AiEngineerPanel />
           </div>
         </div>

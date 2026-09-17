@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useAppStore, logAudit } from '@/lib/store'
+import { useSettings } from '@/components/settings-drawer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -28,6 +29,7 @@ const SUGGESTIONS = [
 
 export function AiEngineerPanel() {
   const { selectedSessionId, sessions, anomalies, acknowledgeAnomaly, aiPanelOpen, setAiPanelOpen } = useAppStore()
+  const settings = useSettings()
   const [messages, setMessages] = useState<ChatMsg[]>(() => {
     // Restore conversation from localStorage on mount
     if (typeof window === 'undefined') return []
@@ -58,24 +60,28 @@ export function AiEngineerPanel() {
   }, [messages, loading])
 
   // Auto-ask the AI when a NEW anomaly arrives (dedupe by id, only the latest unacknowledged)
+  // Gated by settings: aiAutoDiagnose (whether to auto-ask) + anomalyAutoTrigger (whether to push + open panel)
   const latestAnomaly = anomalies.find((a) => !a.acknowledged)
   useEffect(() => {
     if (!latestAnomaly || latestAnomaly.id === lastAutoAskedId.current) return
     if (loading) return
     lastAutoAskedId.current = latestAnomaly.id
-    // auto-open the panel
-    setAiPanelOpen(true)
-    // push a notification to the notification center
-    pushNotification({
-      title: `Anomaly: ${latestAnomaly.channel.replace(/_/g, ' ')}`,
-      message: `${latestAnomaly.driverCode} ${latestAnomaly.channel.replace(/_/g, ' ')} = ${latestAnomaly.value.toFixed(latestAnomaly.channel.includes('temp') || latestAnomaly.channel.includes('pressure') ? 1 : 0)} (safe ${latestAnomaly.range.min}–${latestAnomaly.range.max}). AI diagnosing…`,
-      severity: 'critical',
-      source: 'telemetry',
-      action: 'ai-diagnosing',
-    })
-    // auto-ask
-    const prompt = `ANOMALY DETECTED: ${latestAnomaly.message}. The live value is ${latestAnomaly.value.toFixed(latestAnomaly.channel.includes('temp') || latestAnomaly.channel.includes('pressure') ? 1 : 0)}. Diagnose the likely root cause and recommend an immediate engineering action (setup change or driving adjustment) to bring it back into the safe range [${latestAnomaly.range.min}, ${latestAnomaly.range.max}].`
-    send(prompt)
+    // push a notification to the notification center (gated by anomalyAutoTrigger)
+    if (settings.anomalyAutoTrigger) {
+      setAiPanelOpen(true)
+      pushNotification({
+        title: `Anomaly: ${latestAnomaly.channel.replace(/_/g, ' ')}`,
+        message: `${latestAnomaly.driverCode} ${latestAnomaly.channel.replace(/_/g, ' ')} = ${latestAnomaly.value.toFixed(latestAnomaly.channel.includes('temp') || latestAnomaly.channel.includes('pressure') ? 1 : 0)} (safe ${latestAnomaly.range.min}–${latestAnomaly.range.max}). AI diagnosing…`,
+        severity: 'critical',
+        source: 'telemetry',
+        action: 'ai-diagnosing',
+      })
+    }
+    // auto-ask the AI (gated by aiAutoDiagnose)
+    if (settings.aiAutoDiagnose) {
+      const prompt = `ANOMALY DETECTED: ${latestAnomaly.message}. The live value is ${latestAnomaly.value.toFixed(latestAnomaly.channel.includes('temp') || latestAnomaly.channel.includes('pressure') ? 1 : 0)}. Diagnose the likely root cause and recommend an immediate engineering action (setup change or driving adjustment) to bring it back into the safe range [${latestAnomaly.range.min}, ${latestAnomaly.range.max}].`
+      send(prompt)
+    }
     acknowledgeAnomaly(latestAnomaly.id)
   }, [latestAnomaly?.id])
 
