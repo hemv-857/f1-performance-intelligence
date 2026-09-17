@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAppStore } from '@/lib/store'
 import { SectionHeader, StatCard, fmtLapTime, fmtDelta, StatusBadge, SessionBadge, TrackMap } from '@/components/shared'
+import { SkeletonChart, SkeletonTable } from '@/components/skeletons'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,7 +15,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import {
   Line, LineChart, BarChart, Bar, Cell, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid, ReferenceLine, Legend, Area, AreaChart, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts'
-import { Activity, Timer, TrendingDown, TrendingUp, Fuel, Database, GitCompare, Layers, Gauge, Zap, ChevronRight, MapPin, Wind, Flame, Flag, Target, Trophy, Swords, Car } from 'lucide-react'
+import { Activity, Timer, TrendingDown, TrendingUp, Fuel, Database, GitCompare, Layers, Gauge, Zap, ChevronRight, MapPin, Wind, Flame, Flag, Target, Trophy, Swords, Car, Crosshair } from 'lucide-react'
 
 // (Cell import moved up)
 
@@ -203,6 +204,7 @@ export function AnalyticsView() {
           <TabsTrigger value="replay" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Layers className="h-3.5 w-3.5 mr-1.5" /> Qualifying Replay</TabsTrigger>
           <TabsTrigger value="h2h" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Target className="h-3.5 w-3.5 mr-1.5" /> Head-to-Head</TabsTrigger>
           <TabsTrigger value="constructors" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Trophy className="h-3.5 w-3.5 mr-1.5" /> Constructors</TabsTrigger>
+          <TabsTrigger value="deepdive" className="data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300"><Crosshair className="h-3.5 w-3.5 mr-1.5" /> Deep-Dive</TabsTrigger>
         </TabsList>
 
         {/* ---- Delta-P ---- */}
@@ -426,6 +428,11 @@ export function AnalyticsView() {
         {/* ---- Constructors Championship ---- */}
         <TabsContent value="constructors" className="space-y-4">
           <ConstructorsTab />
+        </TabsContent>
+
+        {/* ---- Driver Comparison Deep-Dive ---- */}
+        <TabsContent value="deepdive" className="space-y-4">
+          <DeepDiveTab ourDriverId={ourDriverId} rivalId={rivalId} ourDrivers={ourDrivers} rivals={rivals} selectedSessionId={selectedSessionId} />
         </TabsContent>
       </Tabs>
     </div>
@@ -873,4 +880,312 @@ function ConstructorsTab() {
   )
 }
 
+// ---- Deep-Dive tab: corner-by-corner delta + stint consistency + trajectory ----
+function DeepDiveTab({
+  ourDriverId, rivalId, ourDrivers, rivals, selectedSessionId,
+}: {
+  ourDriverId: string | null
+  rivalId: string | null
+  ourDrivers: any[]
+  rivals: any[]
+  selectedSessionId: string | null
+}) {
+  const ourCode = ourDrivers.find((d: any) => d.id === ourDriverId)?.code ?? 'TSU'
+  const rivalCode = rivals.find((d: any) => d.id === rivalId)?.code ?? 'VER'
 
+  // Fetch delta records (lap + per-sector). Keyed separately from the parent's
+  // ['delta', ...] query so react-query caches both independently.
+  const deltaQ = useQuery({
+    queryKey: ['delta-corner', selectedSessionId, ourDriverId, rivalId],
+    enabled: !!selectedSessionId && !!ourDriverId && !!rivalId,
+    queryFn: async () =>
+      (fetch(`/api/analytics/delta?sessionId=${selectedSessionId}&driverId=${ourDriverId}&rivalId=${rivalId}`)).then((r) => r.json()),
+  })
+
+  // Fetch session laps for the stint-consistency sparklines. Keyed separately
+  // from the parent's sessionQ so the Deep-Dive tab owns its own fetch.
+  const sessionQ = useQuery({
+    queryKey: ['session-deepdive', selectedSessionId],
+    enabled: !!selectedSessionId,
+    queryFn: async () => (fetch(`/api/sessions/${selectedSessionId}`)).then((r) => r.json()),
+  })
+
+  // ---- Card 1: corner-by-corner heatmap ----
+  const sectorRows: any[] = (deltaQ.data?.sectorDeltas ?? []).slice(0, 10)
+  const sectorAvg = (idx: 1 | 2 | 3) => {
+    if (sectorRows.length === 0) return 0
+    const sum = sectorRows.reduce((s: number, r: any) => s + (r[`s${idx}`] ?? 0), 0)
+    return sum / sectorRows.length
+  }
+  const avgs = [sectorAvg(1), sectorAvg(2), sectorAvg(3)]
+  let bestSector = 1
+  let worstSector = 1
+  for (let i = 1; i <= 3; i++) {
+    if (avgs[i - 1] < avgs[bestSector - 1]) bestSector = i
+    if (avgs[i - 1] > avgs[worstSector - 1]) worstSector = i
+  }
+  // Heatmap cell color — emerald (we're faster), red (we're slower), zinc (small).
+  // Intensity scales with magnitude (mirrors the existing delta-tab sector heatmap).
+  const cellColor = (v: number) => {
+    if (v === 0) return 'bg-zinc-800/40 text-zinc-500'
+    if (v > 200) return 'bg-red-500/35 text-red-200'
+    if (v > 50) return 'bg-red-500/25 text-red-300'
+    if (v < -200) return 'bg-emerald-500/35 text-emerald-200'
+    if (v < -50) return 'bg-emerald-500/25 text-emerald-300'
+    return 'bg-zinc-700/30 text-zinc-300'
+  }
+
+  // ---- Card 2: stint consistency sparklines ----
+  const drivers: any[] = sessionQ.data?.session?.drivers ?? []
+  const ourSessionDriver = drivers.find((d: any) => d.driver.id === ourDriverId)
+  const rivalSessionDriver = drivers.find((d: any) => d.driver.id === rivalId)
+  const ourLaps: { lap: number; time: number }[] = (ourSessionDriver?.laps ?? [])
+    .filter((l: any) => l.isValid)
+    .map((l: any) => ({ lap: l.lapNumber, time: l.lapTimeMs }))
+  const rivalLaps: { lap: number; time: number }[] = (rivalSessionDriver?.laps ?? [])
+    .filter((l: any) => l.isValid)
+    .map((l: any) => ({ lap: l.lapNumber, time: l.lapTimeMs }))
+  // Sample standard deviation (n-1) — a measure of lap-time variance.
+  const stdDev = (arr: number[]) => {
+    if (arr.length < 2) return 0
+    const mean = arr.reduce((s, v) => s + v, 0) / arr.length
+    const variance = arr.reduce((s, v) => s + (v - mean) ** 2, 0) / (arr.length - 1)
+    return Math.sqrt(variance)
+  }
+  const ourStd = stdDev(ourLaps.map((l) => l.time))
+  const rivalStd = stdDev(rivalLaps.map((l) => l.time))
+  const verdict = (s: number) =>
+    s < 200
+      ? { label: 'CONSISTENT', cls: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' }
+      : s <= 400
+        ? { label: 'VARIABLE', cls: 'border-amber-500/40 bg-amber-500/10 text-amber-300' }
+        : { label: 'ERRATIC', cls: 'border-red-500/40 bg-red-500/10 text-red-300' }
+
+  // ---- Card 3: performance trajectory (rolling 3-lap avg of lap delta) ----
+  const lapDeltas: { lap: number; delta: number }[] = (deltaQ.data?.laps ?? [])
+    .slice(0, 10)
+    .map((l: any) => ({ lap: l.lapNumber, delta: l.deltaMs }))
+  const rolling: { lap: number; avg: number }[] = []
+  for (let i = 2; i < lapDeltas.length; i++) {
+    const slice = lapDeltas.slice(i - 2, i + 1)
+    const avg = slice.reduce((s, x) => s + x.delta, 0) / 3
+    rolling.push({ lap: lapDeltas[i].lap, avg: Math.round(avg * 10) / 10 })
+  }
+  const validAvgs = rolling.map((r) => r.avg)
+  const bestStreak = validAvgs.length ? Math.min(...validAvgs) : 0
+  const worstStreak = validAvgs.length ? Math.max(...validAvgs) : 0
+  const half = Math.max(1, Math.floor(validAvgs.length / 2))
+  const firstHalfAvg = validAvgs.slice(0, half).reduce((s, v) => s + v, 0) / half
+  const secondHalfAvg = validAvgs.length > half
+    ? validAvgs.slice(half).reduce((s, v) => s + v, 0) / (validAvgs.length - half)
+    : firstHalfAvg
+  // delta-P: negative = we're faster. Lower second-half avg = improving.
+  const trendImproving = secondHalfAvg < firstHalfAvg
+
+  return (
+    <>
+      {/* 1) Corner-by-corner delta heatmap */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Corner-by-Corner Delta"
+          subtitle={`${ourCode} vs ${rivalCode} — per-corner time delta across the last 10 laps`}
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-red-500/40 text-red-300">
+              <Crosshair className="h-3 w-3 mr-1" />{sectorRows.length} LAPS
+            </Badge>
+          }
+        />
+        {deltaQ.isLoading ? (
+          <SkeletonTable rows={10} cols={5} />
+        ) : sectorRows.length === 0 ? (
+          <div className="text-center py-8 text-sm text-muted-foreground">No sector delta data available.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] font-mono-nums border-collapse">
+              <thead>
+                <tr className="text-[10px] uppercase text-muted-foreground">
+                  <th className="text-left px-2 py-1.5 font-medium">Lap</th>
+                  <th className="text-center px-2 py-1.5 font-medium">S1</th>
+                  <th className="text-center px-2 py-1.5 font-medium">S2</th>
+                  <th className="text-center px-2 py-1.5 font-medium">S3</th>
+                  <th className="text-center px-2 py-1.5 font-medium">Lap Δ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sectorRows.map((d: any) => {
+                  const lapDelta = (deltaQ.data?.laps ?? []).find((l: any) => l.lapNumber === d.lapNumber)?.deltaMs ?? 0
+                  return (
+                    <tr key={d.lapNumber} className="border-b border-border/30">
+                      <td className="px-2 py-1.5 font-bold text-muted-foreground">L{d.lapNumber}</td>
+                      <td className={cn('text-center px-3 py-1.5 rounded', cellColor(d.s1))}>{fmtDelta(d.s1)}</td>
+                      <td className={cn('text-center px-3 py-1.5 rounded', cellColor(d.s2))}>{fmtDelta(d.s2)}</td>
+                      <td className={cn('text-center px-3 py-1.5 rounded', cellColor(d.s3))}>{fmtDelta(d.s3)}</td>
+                      <td className={cn('text-center px-3 py-1.5 rounded font-bold', cellColor(lapDelta))}>{fmtDelta(lapDelta)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {sectorRows.length > 0 && (
+          <div className="mt-3 px-3 py-2 text-[10px] text-muted-foreground font-mono-nums border-t border-border/60 flex flex-wrap gap-x-3 gap-y-1">
+            <span className="text-emerald-300"><Target className="inline h-3 w-3 mr-1" />Best sector: S{bestSector} ({fmtDelta(avgs[bestSector - 1])})</span>
+            <span className="text-border">·</span>
+            <span className="text-red-300"><Flame className="inline h-3 w-3 mr-1" />Worst sector: S{worstSector} ({fmtDelta(avgs[worstSector - 1])})</span>
+          </div>
+        )}
+      </Card>
+
+      {/* 2) Stint Consistency Sparklines */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Stint Consistency"
+          subtitle="Lap-time variance across the stint (lower = more consistent)"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-amber-500/40 text-amber-300">
+              <Activity className="h-3 w-3 mr-1" /> STD DEV
+            </Badge>
+          }
+        />
+        {sessionQ.isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <SkeletonChart height={120} />
+            <SkeletonChart height={120} />
+          </div>
+        ) : ourLaps.length === 0 && rivalLaps.length === 0 ? (
+          <div className="text-center py-8 text-sm text-muted-foreground">No stint lap-time data available.</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ConsistencySparkline
+              title={ourCode}
+              color="#f87171"
+              laps={ourLaps}
+              std={ourStd}
+              verdict={verdict(ourStd)}
+            />
+            <ConsistencySparkline
+              title={rivalCode}
+              color="#fbbf24"
+              laps={rivalLaps}
+              std={rivalStd}
+              verdict={verdict(rivalStd)}
+            />
+          </div>
+        )}
+      </Card>
+
+      {/* 3) Performance Trajectory */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Performance Trajectory"
+          subtitle="Rolling 3-lap average delta vs rival"
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-red-500/40 text-red-300">
+              <TrendingUp className="h-3 w-3 mr-1" /> 3-LAP AVG
+            </Badge>
+          }
+        />
+        {deltaQ.isLoading ? (
+          <SkeletonChart height={260} />
+        ) : rolling.length === 0 ? (
+          <div className="text-center py-8 text-sm text-muted-foreground">Not enough laps for a 3-lap rolling average.</div>
+        ) : (
+          <>
+            <div className="h-[260px] px-2 pb-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={rolling} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="trajGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f87171" stopOpacity={0.45} />
+                      <stop offset="100%" stopColor="#f87171" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
+                  <XAxis dataKey="lap" tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#71717a' }} axisLine={false} tickLine={false} unit="ms" />
+                  <ReferenceLine y={0} stroke="#52525b" strokeDasharray="2 2" />
+                  <Tooltip
+                    contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 12 }}
+                    labelStyle={{ color: '#a1a1aa' }}
+                    labelFormatter={(v) => `Lap ${v}`}
+                    formatter={(v: any) => [`${v} ms`, '3-lap avg Δ']}
+                  />
+                  <Area type="monotone" dataKey="avg" stroke="#f87171" strokeWidth={2} fill="url(#trajGrad)" isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 px-4 pb-2">
+              <StatCard
+                label="Best streak"
+                value={fmtDelta(bestStreak)}
+                unit="s"
+                sub="lowest 3-lap avg"
+                accent="emerald"
+                icon={<TrendingDown className="h-4 w-4" />}
+              />
+              <StatCard
+                label="Worst streak"
+                value={fmtDelta(worstStreak)}
+                unit="s"
+                sub="highest 3-lap avg"
+                accent="red"
+                icon={<TrendingUp className="h-4 w-4" />}
+              />
+              <StatCard
+                label="Trend"
+                value={trendImproving ? 'IMPROVING' : 'WORSENING'}
+                sub={`H1 ${fmtDelta(firstHalfAvg)} → H2 ${fmtDelta(secondHalfAvg)}`}
+                accent={trendImproving ? 'emerald' : 'red'}
+                icon={trendImproving ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+              />
+            </div>
+          </>
+        )}
+      </Card>
+    </>
+  )
+}
+
+// ---- Small sparkline sub-component for the stint consistency card ----
+function ConsistencySparkline({
+  title, color, laps, std, verdict,
+}: {
+  title: string
+  color: string
+  laps: { lap: number; time: number }[]
+  std: number
+  verdict: { label: string; cls: string }
+}) {
+  const chartData = laps.map((l) => ({ lap: l.lap, time: l.time }))
+  return (
+    <div className="rounded-md border border-border/50 bg-background/40 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+          <span className="font-mono-nums text-xs font-bold" style={{ color }}>{title}</span>
+        </div>
+        <Badge variant="outline" className={cn('font-mono-nums text-[10px]', verdict.cls)}>
+          {verdict.label}
+        </Badge>
+      </div>
+      <div className="h-[60px]">
+        {chartData.length > 1 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+              <XAxis dataKey="lap" hide />
+              <YAxis hide domain={['dataMin', 'dataMax']} />
+              <Line type="monotone" dataKey="time" stroke={color} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-full flex items-center justify-center text-[10px] text-muted-foreground font-mono-nums">insufficient data</div>
+        )}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground font-mono-nums">
+        <span>Consistency (σ)</span>
+        <span style={{ color }}>{(std / 1000).toFixed(3)}s · {std.toFixed(0)}ms</span>
+      </div>
+    </div>
+  )
+}

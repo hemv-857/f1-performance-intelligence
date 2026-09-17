@@ -29,6 +29,7 @@ import {
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Toaster as SonnerToaster } from 'sonner'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import type { SessionSummary } from '@/lib/types'
 
@@ -208,14 +209,24 @@ export function AppShell() {
         {/* Main */}
         <main className="flex-1 min-w-0 px-3 sm:px-5 py-5 grid-bg">
           <div className="mx-auto max-w-[1500px]">
-            {activeView === 'overview' && <OverviewView socket={socket} />}
-            {activeView === 'telemetry' && <TelemetryViewer socket={socket} />}
-            {activeView === 'builder' && <BuilderView />}
-            {activeView === 'analytics' && <AnalyticsView />}
-            {activeView === 'devops' && <DevOpsView />}
-            {activeView === 'raceops' && <RaceOpsView socket={socket} />}
-            {activeView === 'pitbox' && <PitBoxView socket={socket} />}
-            {activeView === 'strategy' && <StrategyView socket={socket} />}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeView}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+              >
+                {activeView === 'overview' && <OverviewView socket={socket} />}
+                {activeView === 'telemetry' && <TelemetryViewer socket={socket} />}
+                {activeView === 'builder' && <BuilderView />}
+                {activeView === 'analytics' && <AnalyticsView />}
+                {activeView === 'devops' && <DevOpsView />}
+                {activeView === 'raceops' && <RaceOpsView socket={socket} />}
+                {activeView === 'pitbox' && <PitBoxView socket={socket} />}
+                {activeView === 'strategy' && <StrategyView socket={socket} />}
+              </motion.div>
+            </AnimatePresence>
           </div>
         </main>
       </div>

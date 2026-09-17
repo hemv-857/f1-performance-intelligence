@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { Driver, SessionSummary } from '@/lib/types'
 import { Area, AreaChart, ResponsiveContainer, YAxis } from 'recharts'
+import { useCountUp } from '@/hooks/use-count-up'
+import { SkeletonStatCard } from '@/components/skeletons'
 
 // ---- helpers ----
 
@@ -32,6 +34,8 @@ export function StatCard({
   accent = 'default',
   icon,
   spark,
+  loading,
+  animate = true,
 }: {
   label: string
   value: string | number
@@ -40,6 +44,8 @@ export function StatCard({
   accent?: 'default' | 'red' | 'amber' | 'emerald' | 'rose'
   icon?: React.ReactNode
   spark?: number[]
+  loading?: boolean
+  animate?: boolean
 }) {
   const accentClasses: Record<string, string> = {
     default: 'text-foreground',
@@ -55,6 +61,19 @@ export function StatCard({
     emerald: '#34d399',
     rose: '#fb7185',
   }
+  // animated count-up for numeric values
+  const numValue = typeof value === 'number' ? value : parseFloat(String(value).replace(/[^0-9.\-]/g, ''))
+  const isNumeric = typeof value === 'number' || (!isNaN(numValue) && String(value).match(/^[\d.,]+$/))
+  const animated = useCountUp(isNumeric ? numValue : 0, { duration: 700, enabled: animate && isNumeric })
+
+  if (loading) return <SkeletonStatCard />
+
+  const displayValue = isNumeric
+    ? (Number.isInteger(numValue)
+        ? Math.round(animated).toLocaleString()
+        : animated.toFixed(String(value).includes('.') ? (String(value).split('.')[1]?.length ?? 1) : 1))
+    : String(value)
+
   return (
     <Card className="relative overflow-hidden border-border/50 bg-card/60 backdrop-blur p-4 card-hover group">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-red-500/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -62,7 +81,7 @@ export function StatCard({
         <div className="min-w-0">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">{label}</div>
           <div className={cn('mt-1 font-mono-nums text-2xl font-bold leading-none transition-transform group-hover:scale-[1.02] origin-left', accentClasses[accent])}>
-            {value}
+            {displayValue}
             {unit && <span className="ml-1 text-sm font-medium text-muted-foreground">{unit}</span>}
           </div>
           {sub && <div className="mt-1.5 text-[11px] text-muted-foreground truncate">{sub}</div>}

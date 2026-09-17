@@ -101,12 +101,13 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 slide-up">
         <StatCard
           label="Pipeline Uptime"
-          value={(healthQ.data?.pipelineUptimePct ?? 99.9).toFixed(2)}
+          value={Number((healthQ.data?.pipelineUptimePct ?? 99.9).toFixed(2))}
           unit="%"
           sub="Target 99.9% · zero mid-race data loss"
           accent="emerald"
           icon={<Activity className="h-4 w-4" />}
           spark={[99.8, 99.9, 99.95, 99.97, 99.96, 99.98, 99.97, 99.97]}
+          loading={healthQ.isLoading}
         />
         <StatCard
           label="Avg Query Latency"
@@ -116,6 +117,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
           accent="amber"
           icon={<Timer className="h-4 w-4" />}
           spark={sparkLatency}
+          loading={healthQ.isLoading}
         />
         <StatCard
           label="Features / Race Weekend"
@@ -124,6 +126,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
           accent="red"
           icon={<TrendingUp className="h-4 w-4" />}
           spark={[1, 1, 2, 2, 3, 2, 2, 2]}
+          loading={healthQ.isLoading}
         />
         <StatCard
           label="Engineer Adoption"
@@ -133,6 +136,7 @@ export function OverviewView({ socket }: { socket: ReturnType<typeof useTelemetr
           accent="emerald"
           icon={<Cpu className="h-4 w-4" />}
           spark={[40, 65, 80, 92, 100, 100, 100, 100]}
+          loading={healthQ.isLoading}
         />
       </div>
 
