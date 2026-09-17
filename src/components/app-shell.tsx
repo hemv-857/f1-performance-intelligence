@@ -14,8 +14,10 @@ import { PitBoxView } from '@/components/views/pitbox'
 import { StrategyView } from '@/components/views/strategy'
 import { AiEngineerPanel } from '@/components/ai-engineer-panel'
 import { AuditLogDrawer } from '@/components/audit-log-drawer'
+import { DataExportDrawer } from '@/components/data-export-drawer'
 import { CommandPalette } from '@/components/command-palette'
 import { NotificationCenter, pushNotification } from '@/components/notification-center'
+import { DataExportSettingsDrawer } from '@/components/settings-drawer'
 import {
   Activity,
   Gauge,
@@ -169,7 +171,9 @@ export function AppShell() {
               <Search className="h-4 w-4" />
             </button>
             <NotificationCenter />
+            <DataExportDrawer />
             <AuditLogDrawer />
+            <DataExportSettingsDrawer />
             <AiEngineerPanel />
             <LivePill connected={socket.connected} />
           </div>
@@ -188,8 +192,10 @@ export function AppShell() {
               <span className="hidden lg:inline">Search</span>
               <kbd className="hidden lg:inline text-[9px] border border-border/60 rounded px-1 py-0.5">⌘K</kbd>
             </button>
+            <DataExportDrawer />
             <AuditLogDrawer />
             <NotificationCenter />
+            <DataExportSettingsDrawer />
             <AiEngineerPanel />
           </div>
         </div>

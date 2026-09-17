@@ -733,3 +733,70 @@ Unresolved / Next-phase recommendations:
 - The Session Compare could add a 3rd session picker for 3-way comparison.
 - Add a settings panel for notification preferences (per-severity sound, per-source enable/disable).
 - Add browser notification permission re-request flow after a denial.
+
+---
+Task ID: feat-3 (data-export)
+Agent: full-stack-developer (data-export)
+Task: Build Data Export Center (CSV/JSON export) — slide-out drawer from header
+
+Work Log:
+- Read prior worklog.md, app-shell.tsx, ai-engineer-panel.tsx, audit-log-drawer.tsx, shared.tsx, store.ts (Zustand w/ `selectedSessionId`, `logAudit()` helper), types.ts, and the 7 source API routes (sessions/[id], analytics/{delta,degradation,fuel}, devops/deployments, audit-log, leaderboard, drivers) to map every dataset's response shape and select the right record array.
+- Inspected shadcn ui primitives: Sheet, ToggleGroup, Button, Badge, ScrollArea — confirmed ToggleGroup uses `data-[state=on]` styling and `type="single"`.
+- Created `/home/z/my-project/src/components/data-export-drawer.tsx` (single 'use client' file, ~520 lines) exporting `DataExportDrawer()`:
+  * Sheet (right slide-out, `w-full sm:w-[440px]`) triggered by a header button labelled "Export" with a `Download` lucide icon, using the same `h-8 gap-1.5 border-border/60 bg-card/40` styling as `AuditLogDrawer` so the header buttons line up.
+  * Header: "Data Export Center" + subtitle "Export platform data as CSV or JSON", emerald-accented icon tile (kept distinct from the red AI Engineer tile and the amber Notification tile).
+  * Format toggle: shadcn `ToggleGroup type="single"` with CSV | JSON options (default CSV). Selected option gets `data-[state=on]:bg-emerald-500/15 text-emerald-300 border-emerald-500/40` styling.
+  * Dataset catalogue: 7 datasets defined as a `DatasetDef[]` array (session-laps, delta-p, tire-deg, fuel-trends, deployments, audit-log, leaderboard). Each row shows icon + name + description + record count badge (emerald when ready, amber when unavailable, "loading…" spinner when fetching).
+  * Per-row export buttons: each row has both a "CSV" and a "JSON" button. The button matching the top-level format toggle gets `variant="default"` (highlighted), the other gets `variant="outline"`. Clicking either exports that specific format. While a dataset is exporting, both buttons show a Loader2 spinner and are disabled.
+  * Export logic: builds the records array from the cached react-query data, calls `jsonToCsv()` (provided helper, exact) for CSV or `JSON.stringify(records, null, 2)` for JSON, creates a Blob, downloads via a synthetic `<a>` element with filename `rb-{dataset-key}-{format}-{ts}.{ext}` (ts is ISO timestamp with `:`/`.` replaced by `-`), revokes object URL on next tick. Fires `toast.success("Exported N rows as {FMT}", { description: filename, icon })`. Calls `logAudit('pdf_export', 'telemetry', 'engineer', datasetKey, \`Exported ${n} rows as ${format}\`, 'info', { dataset, format, rows, filename })`.
+  * Recent exports section: bottom of drawer shows last 5 exports (dataset name, format uppercase, row count, relative time). Empty state: "No exports yet". State is local (not persisted) per spec.
+  * Lazy data loading: all 7 source queries fire on `open` via react-query `enabled: open`. TSU driver ID resolved by fetching `/api/drivers` once and filtering `code === 'TSU'`. Session-dependent datasets show an amber "No session selected" / "TSU driver not found" badge when prerequisites are missing.
+  * CSV flatten depth = 1 (default). For session-laps, each lap record is flattened with `driver_code, driver_name, driver_team, driver_number, isRival` prefix keys + all lap fields. Nested arrays (e.g. meta) become `;`-joined strings.
+  * Fully responsive: Sheet full-width on mobile (`w-full`), 440px on desktop (`sm:w-[440px]`). Recent exports panel scrolls (`max-h-32 overflow-y-auto`).
+- Wired `DataExportDrawer` into `app-shell.tsx` header:
+  * Added `import { DataExportDrawer } from '@/components/data-export-drawer'`.
+  * Inserted `<DataExportDrawer />` between `<NotificationCenter />` and `<AuditLogDrawer />` in BOTH the mobile header (`md:hidden` section) and the desktop header (`hidden sm:flex` section).
+- Ran `cd /home/z/my-project && bun run lint`: 0 errors, 0 warnings. Dev server recompiled cleanly (`✓ Compiled in 430ms` then `✓ Compiled in 221ms`).
+- Verified end-to-end with agent-browser:
+  * Opened http://localhost:81/, snapshot showed "Open data export center" button at @e1633 (between Search and Audit Log).
+  * Clicked @e1633 → drawer opened. Sheet content text verified: header "Data Export Center · Export platform data as CSV or JSON", format toggle (CSV checked), all 7 dataset rows with row counts populated: Session laps 72 rows, Delta-P 33 rows, Tire degradation 11 rows, Fuel trends 11 rows, Deployments 5 rows, Audit log 16 rows, Leaderboard 9 rows. Header badge shows "7/7 ready".
+  * Clicked "CSV" button on Session laps dataset → sonner toast appeared: "Exported 72 rows as CSV" with description "rb-session-laps-csv-2026-09-17T22-56-35.csv". `POST /api/audit-log` returned 201 Created in dev log. Recent exports list updated: "2/5 · Session laps CSV 72 rows 8s ago".
+  * Clicked "JSON" on Delta-P dataset → toast "Exported 33 rows as JSON" with description "rb-delta-p-json-2026-09-17T22-57-00.json". Recent exports list shows newest entry on top.
+  * Screenshots saved to `/home/z/my-project/agent-ctx/feat-3-data-export-drawer-open.png` and `feat-3-data-export-after-json.png`.
+
+Stage Summary:
+- Data Export Center is feature-complete and lint-clean. The drawer mounts via the app-shell header in both desktop and mobile sections, opens to reveal 7 exportable datasets with live row counts, exports CSV (via the provided `jsonToCsv` flatten helper) or JSON with timestamped filenames (`rb-{key}-{format}-{ts}.{ext}`), fires a sonner success toast, logs `pdf_export` audit entries (verified via `POST /api/audit-log 201`), and tracks the last 5 exports in local component state. All 7 source APIs were verified against the actual response shapes. No new API routes were needed — the drawer is a pure consumer of existing endpoints.
+
+---
+Task ID: round-9
+Agent: main (webDevReview cron)
+Task: QA pass + 3 new features (Settings panel, Command Palette recent searches, Data Export Center) + styling polish
+
+Work Log:
+- QA via agent-browser (gateway :81): all 8 views render with ZERO runtime errors. Lint clean. Platform is stable.
+
+New features added:
+1. Settings panel (feat-1, main): new `src/components/settings-drawer.tsx` with a module-level `settingsStore` (localStorage-persisted, `rb-settings` key) + `useSettings` hook + `updateSettings` helper. A new "Settings" button (gear icon) in the header opens a slide-out Sheet with 4 sections: (a) **Notifications** — Sound cues toggle, Desktop push notifications toggle (requests `Notification.requestPermission()`, shows permission status badge: ✓ ENABLED / BLOCKED / N/A). (b) **AI Race Engineer** — Auto-diagnose anomalies toggle, Auto-trigger on anomalies toggle. (c) **Display** — Compact density toggle, Live ticker tape toggle, Pulse anomaly cards toggle. (d) **Data & Cache** — Clear notification history, Clear AI conversation, Clear all cache & reset settings (red destructive button that wipes all localStorage). Plus an About section showing platform version/build/WebSocket/pipeline status. Settings persist across reloads.
+2. Command Palette recent searches (feat-2, main): the Command Palette now persists the last 5 navigations/actions to localStorage (`rb-cmdk-recent`). A new "RECENT" section appears at the top of the palette (with a Clock icon + "clear" button) showing recently accessed views/actions with relative timestamps ("0m ago"). Clicking a recent entry re-navigates. The palette also now includes `g+key` and `?` in the shortcuts hints section. Verified: navigated to Telemetry Viewer → reopened palette → "RECENT" section showed "Telemetry Viewer 0m ago".
+3. Data Export Center (feat-3, subagent): new `src/components/data-export-drawer.tsx` — a slide-out Sheet accessible from the header (Download icon + "Export" label). Lists 7 exportable datasets (Session laps, Delta-P, Tire degradation, Fuel trends, Deployments, Audit log, Leaderboard) with live row counts. Format toggle (CSV/JSON). Each row has CSV + JSON buttons that fetch the data, convert to CSV (with RFC-4180 escaping + nested object flattening) or JSON, create a Blob, trigger a download with filename `rb-{dataset}-{format}-{timestamp}.{ext}`, fire a sonner toast, and log to the audit log. Recent exports panel (last 5, local state). Verified: exported Session laps CSV (72 rows) + Delta-P JSON (33 rows), toasts appeared, audit log entries created.
+
+Styling polish:
+- Settings panel: dark carbon theme, per-section icons (Bell/Bot/Eye/Trash2), Switch toggles, destructive red "Clear all" button, About section with mono stats.
+- Command palette: RECENT section with Clock icon + clear button, relative timestamps, zinc-tinted aria-selected.
+- Data export drawer: emerald-accented header, format toggle, live row counts, recent exports list.
+- Header now has 6 buttons: Search ⌘K, Export, Audit, Alerts, Settings, AI Engineer — all with distinct icons.
+
+Verification:
+- `bun run lint`: 0 errors, 0 warnings.
+- agent-browser: all 8 views render with 0 runtime errors; Settings drawer opens with all 4 sections + toggles work; Command Palette shows RECENT section after navigation; Data Export Center exports CSV+JSON with toasts + audit log entries.
+- Screenshots: download/screenshot-settings-drawer.png, download/screenshot-data-export-drawer.png, download/screenshot-command-palette-recent.png.
+
+Stage Summary:
+- Platform now has a full Settings panel (persistent preferences for notifications/AI/display/cache), a Command Palette with recent searches (localStorage-persisted), and a Data Export Center (CSV/JSON export of any analytics dataset with audit logging). All features browser-verified and lint-clean. The header now has 6 utility buttons + a pipeline status strip, making the platform a complete engineering workstation.
+
+Unresolved / Next-phase recommendations:
+- Wire the Settings toggles to actually affect the UI (e.g. compactDensity → smaller text/padding, showTicker → hide the ticker tape, pulseAnomalies → disable the pulse animation).
+- Add an onboarding/first-visit walkthrough overlay.
+- The Data Export Center could support custom SQL queries (type raw SQL → export results).
+- Add a "share" feature (generate a shareable URL for a specific view state).
+- Add export scheduling (auto-export a report after each session).

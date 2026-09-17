@@ -1,15 +1,39 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { useAppStore } from '@/lib/store'
 import type { ViewKey } from '@/lib/types'
 import {
   LayoutDashboard, Gauge, Boxes, Activity, Workflow, ShieldAlert, Radio, GitBranch,
-  Sparkles, FileText, Play, Zap, RotateCcw, Search,
+  Sparkles, FileText, Play, Zap, RotateCcw, Search, Clock, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+const RECENT_KEY = 'rb-cmdk-recent'
+const MAX_RECENT = 5
+
+interface RecentEntry {
+  type: 'view' | 'action'
+  label: string
+  view?: ViewKey
+  actionId?: string
+  ts: number
+}
+
+function loadRecent(): RecentEntry[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const saved = localStorage.getItem(RECENT_KEY)
+    return saved ? JSON.parse(saved) : []
+  } catch { return [] }
+}
+
+function saveRecent(entries: RecentEntry[]) {
+  if (typeof window === 'undefined') return
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(entries.slice(0, MAX_RECENT))) } catch { /* ignore */ }
+}
 
 const NAV_ITEMS: { key: ViewKey; label: string; icon: any; desc: string }[] = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard, desc: 'Race weekend status & KPIs' },
@@ -32,6 +56,16 @@ const ACTIONS = [
 
 export function CommandPalette() {
   const { cmdKOpen, setCmdKOpen, setActiveView, setAiPanelOpen } = useAppStore()
+  const [recent, setRecent] = useState<RecentEntry[]>(() => loadRecent())
+
+  const addRecent = (entry: RecentEntry) => {
+    setRecent((prev) => {
+      const filtered = prev.filter((r) => r.label !== entry.label)
+      const next = [entry, ...filtered].slice(0, MAX_RECENT)
+      saveRecent(next)
+      return next
+    })
+  }
 
   // Listen for Cmd+K / Ctrl+K
   useEffect(() => {
@@ -46,8 +80,9 @@ export function CommandPalette() {
     return () => window.removeEventListener('keydown', handler)
   }, [cmdKOpen, setCmdKOpen])
 
-  const runNav = (key: ViewKey) => {
+  const runNav = (key: ViewKey, label: string) => {
     setActiveView(key)
+    addRecent({ type: 'view', label, view: key, ts: Date.now() })
     setCmdKOpen(false)
   }
 
@@ -59,7 +94,13 @@ export function CommandPalette() {
     } else if (a.action === 'simulate' && a.view) {
       setActiveView(a.view)
     }
+    addRecent({ type: 'action', label: a.label, actionId: a.id, ts: Date.now() })
     setCmdKOpen(false)
+  }
+
+  const clearRecent = () => {
+    setRecent([])
+    saveRecent([])
   }
 
   return (
@@ -71,8 +112,45 @@ export function CommandPalette() {
             <CommandInput placeholder="Search views, actions, or type a command…" className="h-11 border-0 focus:ring-0 text-sm" />
             <kbd className="text-[9px] text-muted-foreground font-mono-nums border border-border/60 rounded px-1 py-0.5">ESC</kbd>
           </div>
-          <CommandList className="max-h-[360px] overflow-y-auto">
+          <CommandList className="max-h-[400px] overflow-y-auto">
             <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">No results found.</CommandEmpty>
+            {recent.length > 0 && (
+              <>
+                <CommandGroup heading="Recent" className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">
+                  <div className="flex items-center justify-between px-2">
+                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> Recent searches</span>
+                    <button onClick={clearRecent} className="text-[9px] text-muted-foreground hover:text-red-400 flex items-center gap-0.5">
+                      <X className="h-2.5 w-2.5" /> clear
+                    </button>
+                  </div>
+                  {recent.map((r, i) => {
+                    const navItem = NAV_ITEMS.find((n) => n.key === r.view)
+                    const actionItem = ACTIONS.find((a) => a.id === r.actionId)
+                    const Icon = navItem?.icon ?? actionItem?.icon ?? Clock
+                    return (
+                      <CommandItem
+                        key={r.ts + '-' + i}
+                        value={`recent ${r.label}`}
+                        onSelect={() => {
+                          if (r.type === 'view' && r.view) runNav(r.view, r.label)
+                          else if (r.type === 'action' && actionItem) runAction(actionItem)
+                        }}
+                        className="aria-selected:bg-zinc-500/10"
+                      >
+                        <Icon className="h-4 w-4 text-zinc-400 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm">{r.label}</span>
+                        </div>
+                        <span className="text-[9px] text-muted-foreground font-mono-nums">
+                          {Math.floor((Date.now() - r.ts) / 60000)}m ago
+                        </span>
+                      </CommandItem>
+                    )
+                  })}
+                </CommandGroup>
+                <CommandSeparator />
+              </>
+            )}
             <CommandGroup heading="Navigate to view" className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon
@@ -80,7 +158,7 @@ export function CommandPalette() {
                   <CommandItem
                     key={item.key}
                     value={`${item.label} ${item.desc} view nav`}
-                    onSelect={() => runNav(item.key)}
+                    onSelect={() => runNav(item.key, item.label)}
                     className="aria-selected:bg-red-500/10 aria-selected:text-red-300"
                   >
                     <Icon className="h-4 w-4 text-red-400 shrink-0" />
@@ -119,7 +197,8 @@ export function CommandPalette() {
                 <span className="flex items-center gap-1"><kbd className="border border-border/60 rounded px-1 py-0.5">⌘K</kbd> open palette</span>
                 <span className="flex items-center gap-1"><kbd className="border border-border/60 rounded px-1 py-0.5">↑↓</kbd> navigate</span>
                 <span className="flex items-center gap-1"><kbd className="border border-border/60 rounded px-1 py-0.5">↵</kbd> select</span>
-                <span className="flex items-center gap-1"><kbd className="border border-border/60 rounded px-1 py-0.5">ESC</kbd> close</span>
+                <span className="flex items-center gap-1"><kbd className="border border-border/60 rounded px-1 py-0.5">g+key</kbd> view switch</span>
+                <span className="flex items-center gap-1"><kbd className="border border-border/60 rounded px-1 py-0.5">?</kbd> shortcuts help</span>
               </div>
             </CommandGroup>
           </CommandList>
