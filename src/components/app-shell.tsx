@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { useTelemetrySocket } from '@/hooks/use-telemetry-socket'
+import type { ViewKey } from '@/lib/types'
 import { OverviewView } from '@/components/views/overview'
 import { TelemetryViewer } from '@/components/views/telemetry-viewer'
 import { BuilderView } from '@/components/views/builder'
@@ -14,6 +15,7 @@ import { StrategyView } from '@/components/views/strategy'
 import { AiEngineerPanel } from '@/components/ai-engineer-panel'
 import { AuditLogDrawer } from '@/components/audit-log-drawer'
 import { CommandPalette } from '@/components/command-palette'
+import { NotificationCenter, pushNotification } from '@/components/notification-center'
 import {
   Activity,
   Gauge,
@@ -25,6 +27,8 @@ import {
   CircleDot,
   GitBranch,
   Search,
+  Keyboard,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -69,6 +73,58 @@ export function AppShell() {
     }
   }, [sessionsQuery.data, setSessions, setSelectedSessionId])
 
+  // Keyboard shortcuts: g+key for view switching (à la GitHub), ? for help
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  useEffect(() => {
+    let pendingG = false
+    let gTimeout: ReturnType<typeof setTimeout> | null = null
+    const handler = (e: KeyboardEvent) => {
+      // ignore if user is typing in an input/textarea/select or a dialog is open
+      const target = e.target as HTMLElement
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT' || target?.isContentEditable) return
+      if (target?.getAttribute('role') === 'combobox' || target?.getAttribute('role') === 'option') return
+
+      // ? shows the shortcuts help
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        setShowShortcuts((s) => !s)
+        return
+      }
+      // Escape closes shortcuts help
+      if (e.key === 'Escape') {
+        setShowShortcuts(false)
+        return
+      }
+
+      // g-prefix two-key shortcuts
+      if (e.key === 'g' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        pendingG = true
+        if (gTimeout) clearTimeout(gTimeout)
+        gTimeout = setTimeout(() => { pendingG = false }, 1200)
+        e.preventDefault()
+        return
+      }
+      if (pendingG) {
+        const map: Record<string, ViewKey> = {
+          o: 'overview', t: 'telemetry', b: 'builder', a: 'analytics',
+          d: 'devops', r: 'raceops', p: 'pitbox', s: 'strategy',
+        }
+        const view = map[e.key.toLowerCase()]
+        if (view) {
+          e.preventDefault()
+          setActiveView(view)
+        }
+        pendingG = false
+        if (gTimeout) clearTimeout(gTimeout)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      if (gTimeout) clearTimeout(gTimeout)
+    }
+  }, [setActiveView])
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* ===== Header ===== */}
@@ -112,6 +168,7 @@ export function AppShell() {
             >
               <Search className="h-4 w-4" />
             </button>
+            <NotificationCenter />
             <AuditLogDrawer />
             <AiEngineerPanel />
             <LivePill connected={socket.connected} />
@@ -132,6 +189,7 @@ export function AppShell() {
               <kbd className="hidden lg:inline text-[9px] border border-border/60 rounded px-1 py-0.5">⌘K</kbd>
             </button>
             <AuditLogDrawer />
+            <NotificationCenter />
             <AiEngineerPanel />
           </div>
         </div>
@@ -257,6 +315,67 @@ export function AppShell() {
 
       {/* Command palette (Cmd+K / Ctrl+K) */}
       <CommandPalette />
+
+      {/* Keyboard shortcuts help dialog (? to toggle) */}
+      {showShortcuts && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm fade-in"
+          onClick={() => setShowShortcuts(false)}
+        >
+          <div
+            className="relative w-[440px] max-w-[90vw] rounded-xl border border-border/60 bg-card/95 backdrop-blur-xl shadow-2xl p-6 slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Keyboard className="h-5 w-5 text-red-400" />
+              <h2 className="text-sm font-bold">Keyboard Shortcuts</h2>
+              <button
+                onClick={() => setShowShortcuts(false)}
+                className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums mb-2">View navigation (press g, then key)</div>
+              {[
+                ['g o', 'Overview', 'LayoutDashboard'],
+                ['g t', 'Telemetry Viewer', 'Gauge'],
+                ['g b', 'Low-Code Builder', 'Boxes'],
+                ['g a', 'Analytics (dbt)', 'Activity'],
+                ['g d', 'DevOps', 'Workflow'],
+                ['g r', 'Race Ops', 'ShieldAlert'],
+                ['g p', 'Pit-Box (mobile)', 'Radio'],
+                ['g s', 'Strategy', 'GitBranch'],
+              ].map(([keys, label]) => (
+                <div key={keys} className="flex items-center justify-between py-1 px-2 rounded hover:bg-accent/50">
+                  <span className="text-foreground">{label}</span>
+                  <span className="flex gap-1">
+                    {keys.split(' ').map((k, i) => (
+                      <kbd key={i} className="text-[10px] font-mono-nums border border-border/60 rounded px-1.5 py-0.5 bg-background/60">{k}</kbd>
+                    ))}
+                  </span>
+                </div>
+              ))}
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono-nums mt-3 mb-2">Global</div>
+              {[
+                ['⌘ K / Ctrl K', 'Command palette'],
+                ['?', 'This help'],
+                ['Esc', 'Close dialog/panel'],
+              ].map(([keys, label]) => (
+                <div key={keys} className="flex items-center justify-between py-1 px-2 rounded hover:bg-accent/50">
+                  <span className="text-foreground">{label}</span>
+                  <kbd className="text-[10px] font-mono-nums border border-border/60 rounded px-1.5 py-0.5 bg-background/60">{keys}</kbd>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-3 border-t border-border/40 text-[10px] text-muted-foreground font-mono-nums text-center">
+              Press <kbd className="border border-border/60 rounded px-1 py-0.5">?</kbd> any time to toggle this help
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

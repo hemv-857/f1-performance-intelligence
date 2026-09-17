@@ -5,6 +5,7 @@ import { useTelemetrySocket } from '@/hooks/use-telemetry-socket'
 import { SectionHeader, StatCard, StatusBadge } from '@/components/shared'
 import { cn } from '@/lib/utils'
 import { logAudit } from '@/lib/store'
+import { pushNotification } from '@/components/notification-center'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -65,6 +66,13 @@ export function RaceOpsView({ socket }: { socket: ReturnType<typeof useTelemetry
   const runPlaybook = (pb: typeof PLAYBOOKS[number]) => {
     socket.runPlaybook(pb.id)
     toast.info(`Executing playbook: ${pb.name}`, { description: pb.trigger })
+    pushNotification({
+      title: `Playbook: ${pb.name}`,
+      message: pb.trigger,
+      severity: pb.color === 'red' ? 'critical' : pb.color === 'amber' ? 'warning' : 'success',
+      source: 'ops',
+      action: 'playbook-run',
+    })
     logAudit(
       'playbook_run',
       'ops',

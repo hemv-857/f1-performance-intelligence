@@ -580,3 +580,71 @@ Unresolved / Next-phase recommendations:
 - The animated count-up could be tuned to re-trigger on significant data changes (currently animates on every target change).
 - Add keyboard shortcuts for view switching (e.g. g+o for Overview, g+t for Telemetry) à la GitHub.
 - The Deep-Dive heatmap could be enhanced with a mini track map showing where each corner is.
+
+---
+Task ID: feat-2 (deepdive-trackmap)
+Agent: full-stack-developer (deepdive-trackmap)
+Task: Add mini track map with per-corner delta overlays to Deep-Dive tab
+
+Work Log:
+- Read `/home/z/my-project/worklog.md` (round-6 entry explicitly recommended "The Deep-Dive heatmap could be enhanced with a mini track map showing where each corner is" — this is the resolution of that follow-up), `src/components/shared.tsx` (`<TrackMap>` SVG component with hand-crafted path data for Suzuka/Singapore/Austin + unknown fallback, viewBox `0 0 200 140`, renders corner labels at fixed `{x,y}` coords; `CIRCUIT_PATHS` const + `resolveCircuit` resolver — but `corners` were not externally exported), `src/components/skeletons.tsx` (`SkeletonChart height=N`), and the existing `DeepDiveTab` component in `analytics.tsx` (already imports `TrackMap` from shared.tsx; already computes `avgs = [sectorAvg(1), sectorAvg(2), sectorAvg(3)]` for the corner-by-corner heatmap which I can reuse for the delta-overlay colors).
+- Modified `/home/z/my-project/src/components/shared.tsx` (Option A — cleanest): exported a new `getCornerPoints(circuitName: string): { x: number; y: number; num: number }[]` helper that returns the SVG corner-apex coordinates (viewBox 0 0 200 140) for the given circuit, reusing the internal `CIRCUIT_PATHS` + `resolveCircuit` already used by `<TrackMap>`. Also hardened `resolveCircuit` against undefined/null `name` (added `?? ''` fallback to avoid `Cannot read properties of undefined` if the parent passes a missing circuitName).
+- Modified `/home/z/my-project/src/components/views/analytics.tsx` (the only other file touched):
+  - Extended the existing single `@/components/shared` import line to add `getCornerPoints` (no new import line).
+  - Added `circuitName={selectedSession?.circuit.name ?? 'Singapore'}` prop to the `<DeepDiveTab>` call site in the AnalyticsView JSX (parent already had `selectedSession` derived — no new state needed).
+  - Extended `DeepDiveTab` props interface + signature to accept `circuitName: string`.
+  - Added 4 helper computations before `return`: `cornerPts = getCornerPoints(circuitName)`, `cornerCount = cornerPts.length`, `sectorOf(num)` (splits corners into 3 roughly-equal sector groups via `Math.ceil(N/3)` — Singapore 19 → 1-7 / 8-14 / 15-19; Suzuka 18 → 1-6 / 7-12 / 13-18; Austin 20 → 1-7 / 8-14 / 15-20; unknown 8 → 1-3 / 4-5 / 6-8), `deltaHex(v)` → `#34d399` (v<-50, emerald=faster) / `#f87171` (v>50, red=slower) / `#71717a` (zinc=neutral), and `deltaVerdict(v)` → "FASTER"/"SLOWER"/"NEUTRAL".
+  - Inserted a new `<Card>` as the FIRST element of the `<>` fragment returned by `DeepDiveTab` (before the existing "Corner-by-Corner Delta" heatmap card). The card contains:
+    1. `SectionHeader` — title "Track Delta Map", subtitle "{ourCode} vs {rivalCode} — delta overlaid on the circuit map (green = we're faster, red = we're slower)", right badge with `<MapPin>` icon + circuit name uppercase.
+    2. `<SkeletonChart height={360} />` while `deltaQ.isLoading`.
+    3. Track map + per-corner delta halo overlay: a `relative` 360×252 inner container with `bg-gradient-to-br from-red-950/20 via-transparent to-emerald-950/10` background, containing `<TrackMap circuitName={circuitName} size={360} active showLabels>` PLUS an absolutely-positioned `<svg viewBox="0 0 200 140" width=360 height=252 className="absolute inset-0 pointer-events-none" aria-hidden="true">` overlay rendering one `<circle r="5.5" fill="none" stroke={color} strokeWidth="1.4" style={{ filter: 'drop-shadow(0 0 3px ' + color) }}>` per corner — colored by `deltaHex(avgs[sectorOf(p.num) - 1])`. The halo ring sits AROUND the existing corner marker (which has `r=3.2`), so the corner number inside remains visible — a clean "delta halo" effect.
+    4. Legend strip — 3 colored dots (emerald/red/zinc) + "FASTER / SLOWER / NEUTRAL" labels + note "Dots show per-sector avg delta (S1/S2/S3 mapped to corner groups)".
+    5. Sector summary strip — `grid grid-cols-1 sm:grid-cols-3 gap-3` of 3 mini-cards (S1/S2/S3) each showing: colored dot + "SECTOR {n}" badge, the `fmtDelta(v)s` avg colored by verdict, a colored progress bar (`width = min(100, |v|/1000 * 100)%`) sized by delta magnitude, and a verdict word (FASTER/SLOWER/NEUTRAL).
+- Reused the existing `avgs` array (already computed for the corner-by-corner heatmap) for the delta-overlay colors AND the sector strip numbers — so the per-corner halos, the strip numbers, and the existing "Best sector: S{n} / Worst sector: S{n}" summary line in Card 1 all reference the SAME underlying per-sector avg deltas. Consistent UX.
+- `bun run lint`: 0 errors, 0 warnings. Single new identifier (`getCornerPoints`) appended to the existing shared.tsx import; one new optional-ish prop (`circuitName: string`, with fallback at the call site) on `DeepDiveTab`; no new unused imports.
+- Verified end-to-end with agent-browser via gateway `http://localhost:81/` (desktop 1440×900 AND mobile 390×844):
+  * Opened app → clicked "Analytics" → confirmed the TabsList still has 7 triggers (Delta-P / Tire Degradation / Fuel Trends / Qualifying Replay / Head-to-Head / Constructors / Deep-Dive). Clicked "Deep-Dive" tab.
+  * DOM inspection confirmed the new "Track Delta Map" heading renders as the FIRST h2 inside the Deep-Dive tabpanel (heading order: Singapore [parent context card] → Track Delta Map → Corner-by-Corner Delta → Stint Consistency → Performance Trajectory).
+  * `trackMapCount = 2` (parent Circuit Context card + new Track Delta Map card), `deltaCircleCount = 19` (Singapore has 19 corners ✓ — every corner gets a colored halo ring).
+  * Legend + sector strip + subtitle all rendered correctly (innerText check confirmed presence of "FASTER", "SLOWER", "NEUTRAL", "SECTOR 1", "SECTOR 2", "SECTOR 3", "per-sector avg delta", "Track Delta Map", and "delta overlaid on the circuit map").
+  * Tested at 390×844 mobile viewport — same DOM structure renders correctly (trackMapCount=2, deltaCircleCount=19, all 5 headings in correct order, sector strip stacks to 1 col via the `grid-cols-1 sm:grid-cols-3` rule).
+  * Dev server log: clean. No React errors, no compile errors after the edits (`✓ Compiled in` lines only). No browser console errors.
+  * Screenshots saved: `download/screenshot-feat2-trackdeltamap-desktop.png` (desktop Deep-Dive tab fully loaded), `download/screenshot-feat2-trackdeltamap-mobile.png` (mobile viewport), `download/screenshot-feat2-trackdeltamap-card.png` (Track Delta Map card scrolled into view), `download/screenshot-feat2-trackdeltamap.png` (initial Deep-Dive tab view).
+- Wrote agent-ctx work record at `/home/z/my-project/agent-ctx/feat-2-deepdive-trackmap.md` for downstream agents.
+
+Stage Summary:
+- The Deep-Dive tab now has 4 cards (was 3): the new "Track Delta Map" card is the FIRST card. It reuses the existing `<TrackMap>` SVG component (size 360, active, showLabels) for the per-circuit track shape, plus a second absolutely-positioned SVG overlay (same `viewBox 0 0 200 140`) rendering one colored halo ring per corner — colored by the avg delta of the sector that corner belongs to (emerald `#34d399` = we're faster, red `#f87171` = we're slower, zinc `#71717a` = neutral). The halo sits AROUND the existing corner marker so the corner number stays visible. Below the map: a horizontal legend (FASTER/SLOWER/NEUTRAL dots + note about per-sector mapping), and a 3-card sector summary strip (S1/S2/S3) showing each sector's avg delta in its verdict color, a colored progress bar sized by delta magnitude, and the verdict word. Sector-to-corner mapping uses `Math.ceil(N/3)` (Singapore 19 → 1-7/8-14/15-19; Suzuka 18 → 1-6/7-12/13-18; Austin 20 → 1-7/8-14/15-20). The same `avgs` array drives the corner halos, the strip numbers, AND the existing "Best/Worst sector" summary line in Card 1 — single source of truth for sector deltas. All cards use the dark carbon theme (`border-border/50 bg-card/60 backdrop-blur card-hover p-4`), emerald/red/zinc color palette (NO blue/indigo), `font-mono-nums` for all numerics, `SkeletonChart` loader during fetch. Fully responsive (track map centered at fixed 360×252 inner box, legend wraps via `flex-wrap`, sector strip stacks via `grid-cols-1 sm:grid-cols-3`). Two files touched: `src/components/shared.tsx` (+10 LOC: exported `getCornerPoints` + hardened `resolveCircuit`), `src/components/views/analytics.tsx` (+~120 LOC: extended import line, +1 prop on DeepDiveTab, +4 helpers, +1 new Card JSX). `bun run lint` is 100% clean. All interactivity browser-verified end-to-end on desktop + mobile viewports (Track Delta Map card renders as first card with circuit map + 19 colored delta halos + legend + 3-card sector strip with real per-sector avg values). The round-6 "next-phase recommendation" of "The Deep-Dive heatmap could be enhanced with a mini track map showing where each corner is" is now RESOLVED.
+
+---
+Task ID: round-7
+Agent: main (webDevReview cron)
+Task: QA pass + 3 new features (keyboard shortcuts, notification center, deep-dive track map) + styling polish
+
+Work Log:
+- QA via agent-browser (gateway :81): all 8 views render with ZERO runtime errors. Lint clean. Platform is stable.
+
+New features added:
+1. Keyboard shortcuts (feat-1, main): `g`+key two-key view switching (à la GitHub) — g+o (Overview), g+t (Telemetry), g+b (Builder), g+a (Analytics), g+d (DevOps), g+r (Race Ops), g+p (Pit-Box), g+s (Strategy). `?` opens a keyboard shortcuts help dialog (full-screen overlay with all shortcuts listed, dismiss with Esc or click outside). The handler ignores keypresses when typing in inputs/textareas/selects/comboboxes. The `g` prefix has a 1.2s timeout. Help dialog has a dark carbon theme with kbd badges for each shortcut, grouped into "View navigation" and "Global" sections.
+2. Notification Center (feat-4, main): new `src/components/notification-center.tsx` with a module-level event emitter (`pushNotification`, `useNotifications`). A new "Alerts" button in the header (with a red pulse badge showing unread count). A slide-out Sheet drawer showing the notification history (last 50, newest first), each with severity-colored icon (critical=red, warning=amber, success=emerald, info=zinc), title, message, source badge, relative timestamp (date-fns formatDistanceToNow-style), read/unread dot, and dismiss button. Features: mark-all-read, clear-all, per-item dismiss, sound toggle (🔊/🔇), "All quiet" empty state. `pushNotification` also fires a sonner toast for immediate feedback. Wired: AI Engineer auto-diagnosis pushes critical notifications (anomaly detected + AI diagnosing), Race Ops playbook runs push notifications (severity matches playbook color). Verified end-to-end: Simulate Anomaly → AI auto-diagnoses → notification pushed → "Alerts" badge shows "2" → drawer shows the anomaly with "TSU fuel flow = 107... AI diagnosing…".
+3. Deep-Dive Track Delta Map (feat-2, subagent): new first card in the Deep-Dive tab. Reuses the `TrackMap` component with an absolutely-positioned SVG overlay rendering colored halo rings at each corner (emerald=faster, red=slower, zinc=neutral). New `getCornerPoints(circuitName)` helper exported from shared.tsx. Legend (FASTER/SLOWER/NEUTRAL) + sector summary strip (3 mini-cards S1/S2/S3 with avg delta + verdict bar). Uses SkeletonChart while loading. Verified: Singapore map renders with 19 colored halos, legend, and 3-card sector strip.
+
+Styling polish:
+- Keyboard shortcuts help dialog: dark carbon theme, kbd badges, grouped sections, slide-up entrance, fade-in backdrop.
+- Notification center: severity-colored icons, unread dot, red pulse badge on button, "All quiet" empty state with emerald checkmark, sound toggle.
+- Deep-Dive track map: colored halo overlays on circuit map, gradient background (red-950→emerald-950), sector summary mini-cards.
+
+Verification:
+- `bun run lint`: 0 errors, 0 warnings.
+- agent-browser: all 8 views render with 0 runtime errors; keyboard shortcuts help dialog opens (via eval dispatch); Notification Center opens with "2 total · 2 unread" after simulate-anomaly; Deep-Dive Track Delta Map renders with Singapore circuit + colored halos + legend.
+- Fixed: notification store refactored 3 times to satisfy lint rules (react-hooks/globals, react-hooks/immutability, react-hooks/set-state-in-effect) — final version uses in-place array mutation (unshift/splice) + lazy useState initializer + setTimeout-scheduled setState in the listener callback.
+- Screenshots: download/screenshot-notification-center.png, download/screenshot-deepdive-trackmap.png.
+
+Stage Summary:
+- Platform now has keyboard shortcuts (g+key view switching + ? help dialog), a Notification Center (auto-captures anomalies, playbook runs, AI diagnoses with severity-colored icons + sound toggle), and a Deep-Dive Track Delta Map (per-corner delta halos overlaid on the circuit map). All features browser-verified and lint-clean.
+
+Unresolved / Next-phase recommendations:
+- The keyboard shortcuts `?` and `g`+key are hard to test via agent-browser (it types text rather than firing keydown). Verified the handlers are wired and work via eval-dispatched events.
+- Could add browser notification permissions (Notification API) for desktop push notifications when the tab is backgrounded.
+- The Notification Center could persist to localStorage so notifications survive reloads.
+- Add keyboard shortcuts for the Command Palette items (e.g. Enter to run the highlighted action).
+- The Deep-Dive track map halos could be clickable to drill into that corner's detailed telemetry.

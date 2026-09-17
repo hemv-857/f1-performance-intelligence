@@ -282,11 +282,23 @@ const CIRCUIT_PATHS: Record<CircuitKey, CircuitPathDef> = {
 }
 
 function resolveCircuit(name: string): CircuitKey {
-  const n = name.toLowerCase()
+  const n = (name ?? '').toLowerCase()
   if (n.includes('suzuka')) return 'Suzuka'
   if (n.includes('singapore') || n.includes('marina')) return 'Singapore'
   if (n.includes('austin') || n.includes('americas') || n.includes('cota')) return 'Austin'
   return 'unknown'
+}
+
+/**
+ * getCornerPoints — returns the (x, y) SVG coordinates (viewBox 0 0 200 140)
+ * of every corner apex for the given circuit, along with the 1-indexed
+ * corner number. Used by the Deep-Dive Track Delta Map to overlay colored
+ * per-sector delta dots on top of the `<TrackMap>` SVG.
+ */
+export function getCornerPoints(circuitName: string): { x: number; y: number; num: number }[] {
+  const key = resolveCircuit(circuitName)
+  const circuit = CIRCUIT_PATHS[key]
+  return circuit.corners.map((c, i) => ({ x: c.x, y: c.y, num: i + 1 }))
 }
 
 // Compute the (x, y) point at parametric position t (0..1) along the path

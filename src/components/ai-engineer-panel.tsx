@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { pushNotification } from '@/components/notification-center'
 import {
   Bot, Send, Sparkles, Loader2, AlertCircle, X, MessageSquare, Zap, TrendingDown, GitCompare, Disc, BellRing,
 } from 'lucide-react'
@@ -64,6 +65,14 @@ export function AiEngineerPanel() {
     lastAutoAskedId.current = latestAnomaly.id
     // auto-open the panel
     setAiPanelOpen(true)
+    // push a notification to the notification center
+    pushNotification({
+      title: `Anomaly: ${latestAnomaly.channel.replace(/_/g, ' ')}`,
+      message: `${latestAnomaly.driverCode} ${latestAnomaly.channel.replace(/_/g, ' ')} = ${latestAnomaly.value.toFixed(latestAnomaly.channel.includes('temp') || latestAnomaly.channel.includes('pressure') ? 1 : 0)} (safe ${latestAnomaly.range.min}–${latestAnomaly.range.max}). AI diagnosing…`,
+      severity: 'critical',
+      source: 'telemetry',
+      action: 'ai-diagnosing',
+    })
     // auto-ask
     const prompt = `ANOMALY DETECTED: ${latestAnomaly.message}. The live value is ${latestAnomaly.value.toFixed(latestAnomaly.channel.includes('temp') || latestAnomaly.channel.includes('pressure') ? 1 : 0)}. Diagnose the likely root cause and recommend an immediate engineering action (setup change or driving adjustment) to bring it back into the safe range [${latestAnomaly.range.min}, ${latestAnomaly.range.max}].`
     send(prompt)

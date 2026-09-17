@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAppStore } from '@/lib/store'
-import { SectionHeader, StatCard, fmtLapTime, fmtDelta, StatusBadge, SessionBadge, TrackMap } from '@/components/shared'
+import { SectionHeader, StatCard, fmtLapTime, fmtDelta, StatusBadge, SessionBadge, TrackMap, getCornerPoints } from '@/components/shared'
 import { SkeletonChart, SkeletonTable } from '@/components/skeletons'
 import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
@@ -432,7 +432,7 @@ export function AnalyticsView() {
 
         {/* ---- Driver Comparison Deep-Dive ---- */}
         <TabsContent value="deepdive" className="space-y-4">
-          <DeepDiveTab ourDriverId={ourDriverId} rivalId={rivalId} ourDrivers={ourDrivers} rivals={rivals} selectedSessionId={selectedSessionId} />
+          <DeepDiveTab ourDriverId={ourDriverId} rivalId={rivalId} ourDrivers={ourDrivers} rivals={rivals} selectedSessionId={selectedSessionId} circuitName={selectedSession?.circuit.name ?? 'Singapore'} />
         </TabsContent>
       </Tabs>
     </div>
@@ -882,13 +882,14 @@ function ConstructorsTab() {
 
 // ---- Deep-Dive tab: corner-by-corner delta + stint consistency + trajectory ----
 function DeepDiveTab({
-  ourDriverId, rivalId, ourDrivers, rivals, selectedSessionId,
+  ourDriverId, rivalId, ourDrivers, rivals, selectedSessionId, circuitName,
 }: {
   ourDriverId: string | null
   rivalId: string | null
   ourDrivers: any[]
   rivals: any[]
   selectedSessionId: string | null
+  circuitName: string
 }) {
   const ourCode = ourDrivers.find((d: any) => d.id === ourDriverId)?.code ?? 'TSU'
   const rivalCode = rivals.find((d: any) => d.id === rivalId)?.code ?? 'VER'
@@ -982,8 +983,129 @@ function DeepDiveTab({
   // delta-P: negative = we're faster. Lower second-half avg = improving.
   const trendImproving = secondHalfAvg < firstHalfAvg
 
+  // ---- Card 0: Track Delta Map (mini track map + per-corner delta halos) ----
+  // The TrackMap component renders corner markers at fixed SVG coords
+  // (viewBox 0 0 200 140). We overlay a second SVG layer with a colored
+  // halo ring per corner, colored by the avg delta of the sector that corner
+  // belongs to (S1/S2/S3). emerald = we're faster, red = we're slower.
+  const cornerPts = getCornerPoints(circuitName)
+  const cornerCount = cornerPts.length
+  // Assign each 1-indexed corner to one of three roughly-equal sector groups
+  // (e.g. Singapore 19 corners → S1: 1-7, S2: 8-14, S3: 15-19).
+  const sectorOf = (num: number) => {
+    const n = cornerCount || 8
+    const third = Math.max(1, Math.ceil(n / 3))
+    return Math.min(3, Math.floor((num - 1) / third) + 1)
+  }
+  // Hex color for a per-sector delta avg (negative = faster = emerald).
+  const deltaHex = (v: number) =>
+    v < -50 ? '#34d399' : v > 50 ? '#f87171' : '#71717a'
+  const deltaVerdict = (v: number) =>
+    v < -50 ? 'FASTER' : v > 50 ? 'SLOWER' : 'NEUTRAL'
+
   return (
     <>
+      {/* 0) Track Delta Map — mini circuit map with per-corner delta halos */}
+      <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
+        <SectionHeader
+          title="Track Delta Map"
+          subtitle={`${ourCode} vs ${rivalCode} — delta overlaid on the circuit map (green = we're faster, red = we're slower)`}
+          right={
+            <Badge variant="outline" className="font-mono-nums text-[10px] border-red-500/40 text-red-300">
+              <MapPin className="h-3 w-3 mr-1" />{circuitName.toUpperCase()}
+            </Badge>
+          }
+        />
+        {deltaQ.isLoading ? (
+          <SkeletonChart height={360} />
+        ) : (
+          <div className="space-y-4">
+            {/* track map + per-corner delta halo overlay */}
+            <div className="flex items-center justify-center rounded-md p-4 bg-gradient-to-br from-red-950/20 via-transparent to-emerald-950/10">
+              <div className="relative" style={{ width: 360, height: 252 }}>
+                <TrackMap circuitName={circuitName} size={360} active showLabels />
+                <svg
+                  viewBox="0 0 200 140"
+                  width={360}
+                  height={252}
+                  className="absolute inset-0 pointer-events-none"
+                  aria-hidden="true"
+                >
+                  {cornerPts.map((p) => {
+                    const color = deltaHex(avgs[sectorOf(p.num) - 1])
+                    return (
+                      <circle
+                        key={p.num}
+                        cx={p.x}
+                        cy={p.y}
+                        r={5.5}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth={1.4}
+                        opacity={0.95}
+                        style={{ filter: `drop-shadow(0 0 3px ${color})` }}
+                      />
+                    )
+                  })}
+                </svg>
+              </div>
+            </div>
+
+            {/* legend */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] font-mono-nums text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#34d399' }} />
+                FASTER
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#f87171' }} />
+                SLOWER
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#71717a' }} />
+                NEUTRAL
+              </span>
+              <span className="text-[10px] text-muted-foreground/80">
+                Dots show per-sector avg delta (S1/S2/S3 mapped to corner groups)
+              </span>
+            </div>
+
+            {/* sector summary strip */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[1, 2, 3].map((s) => {
+                const v = avgs[s - 1]
+                const color = deltaHex(v)
+                const verdict = deltaVerdict(v)
+                const magPct = Math.min(100, (Math.abs(v) / 1000) * 100)
+                return (
+                  <div key={s} className="rounded-md border border-border/50 bg-background/40 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+                        <span className="font-mono-nums text-xs font-bold">SECTOR {s}</span>
+                      </div>
+                      <span className="font-mono-nums text-sm font-bold" style={{ color }}>
+                        {fmtDelta(v)}s
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-zinc-700/40 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${magPct}%`, background: color }}
+                      />
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground font-mono-nums">
+                      <span>vs rival</span>
+                      <span style={{ color }}>{verdict}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </Card>
+
       {/* 1) Corner-by-corner delta heatmap */}
       <Card className="border-border/50 bg-card/60 backdrop-blur card-hover p-4">
         <SectionHeader
