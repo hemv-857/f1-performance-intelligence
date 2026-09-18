@@ -316,15 +316,12 @@ export function TrackMap({
 }) {
   const key = resolveCircuit(circuitName)
   const circuit = CIRCUIT_PATHS[key]
-  const progressPoint =
-    progress != null ? pointAtProgress(circuit.start, circuit.corners, progress) : null
-
   const racingLine = active ? '#f87171' : '#71717a'
-  const height = (size * 140) / 200
+  const height = size // square viewBox 0 0 500 500
 
   return (
     <svg
-      viewBox="0 0 200 140"
+      viewBox="0 0 500 500"
       width={size}
       height={height}
       className={cn('block', active && 'drop-shadow-[0_0_12px_rgba(248,113,113,0.5)]', className)}
@@ -336,7 +333,7 @@ export function TrackMap({
         d={circuit.d}
         fill="none"
         stroke="#3f3f46"
-        strokeWidth={8}
+        strokeWidth={12}
         strokeLinejoin="round"
         strokeLinecap="round"
       />
@@ -345,53 +342,29 @@ export function TrackMap({
         d={circuit.d}
         fill="none"
         stroke={racingLine}
-        strokeWidth={2}
+        strokeWidth={3}
         strokeLinejoin="round"
         strokeLinecap="round"
       />
       {/* Start/finish line — small checkered rect at the first point */}
       <rect
-        x={circuit.start.x - 3}
-        y={circuit.start.y - 1.5}
-        width={6}
-        height={3}
+        x={circuit.start.x - 6}
+        y={circuit.start.y - 3}
+        width={12}
+        height={6}
         fill="#fafafa"
         stroke="#18181b"
-        strokeWidth={0.5}
+        strokeWidth={1}
       />
-      {showLabels &&
-        circuit.corners.map((c, i) => (
-          <g key={i}>
-            <circle
-              cx={c.x}
-              cy={c.y}
-              r={3.2}
-              fill="#18181b"
-              stroke={active ? '#f87171' : '#a1a1aa'}
-              strokeWidth={1}
-            />
-            <text
-              x={c.x}
-              y={c.y + 1.1}
-              textAnchor="middle"
-              fontSize={4}
-              fontWeight={700}
-              fill={active ? '#fca5a5' : '#d4d4d8'}
-              fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-            >
-              {i + 1}
-            </text>
-          </g>
-        ))}
-      {progressPoint && (
+      {progress != null && (
         <circle
-          cx={progressPoint.x}
-          cy={progressPoint.y}
-          r={4}
+          cx={circuit.start.x}
+          cy={circuit.start.y}
+          r={6}
           fill="#f87171"
           stroke="#ffffff"
-          strokeWidth={1.2}
-          style={{ filter: 'drop-shadow(0 0 4px rgba(248,113,113,0.9))' }}
+          strokeWidth={2}
+          style={{ filter: 'drop-shadow(0 0 6px rgba(248,113,113,0.9))' }}
         />
       )}
     </svg>
