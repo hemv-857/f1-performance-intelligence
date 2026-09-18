@@ -211,10 +211,11 @@ export function MiniTrack({ corners, active = false }: { corners: number; active
 
 // ---- TrackMap (realistic per-circuit SVG) ----
 // Hand-crafted SVG path data for each circuit. viewBox 0 0 200 140.
+// Paths use Q (quadratic bezier) + L commands for smooth, recognizable curves.
 // Two strokes: thick outer track (gray) + thin inner racing line (red when active).
 // Optional corner labels, start/finish line marker, and a progress dot.
 
-type CircuitKey = 'Suzuka' | 'Singapore' | 'Austin' | 'unknown'
+type CircuitKey = 'Suzuka' | 'Singapore' | 'Austin' | 'Monaco' | 'Silverstone' | 'Monza' | 'Spa' | 'Zandvoort' | 'unknown'
 
 interface CircuitPathDef {
   d: string
@@ -222,62 +223,131 @@ interface CircuitPathDef {
   start: { x: number; y: number }
 }
 
-// Suzuka (figure-8 with crossover) — corners 1-18.
-// The descending Degner segment (T9->T10) and the ascending Spoon segment
-// (T13->T14) geometrically cross near (75, 57.5), giving the iconic figure-8.
+// Suzuka (5.807 km, 18 corners, figure-8 with crossover).
+// Start/finish on main straight (right). S-curves → Degner (down, crosses over)
+// → Hairpin (left) → Spoon (up, crosses under) → 130R → Casio → back.
 const SUZUKA_PATH: CircuitPathDef = {
-  d: 'M 175 110 L 175 90 L 170 75 L 175 65 L 165 58 L 170 50 L 155 40 L 135 32 L 110 35 L 80 50 L 60 80 L 45 90 L 50 80 L 50 70 L 90 50 L 110 55 L 130 60 L 150 68 L 165 80 L 170 95 Z',
+  d: 'M 172 128 Q 176 105 173 88 Q 184 74 167 70 Q 152 64 142 66 Q 130 68 120 60 Q 108 52 96 56 Q 86 60 80 70 Q 74 80 70 90 L 56 93 Q 44 96 41 106 Q 39 116 51 117 Q 63 117 67 107 Q 72 97 78 92 Q 92 87 102 82 Q 116 76 124 66 Q 136 54 150 57 Q 164 60 172 68 Q 166 76 173 80 Q 181 84 173 94 Q 170 110 172 128 Z',
   corners: [
-    { x: 175, y: 90 }, { x: 170, y: 75 }, { x: 175, y: 65 }, { x: 165, y: 58 },
-    { x: 170, y: 50 }, { x: 155, y: 40 }, { x: 135, y: 32 }, { x: 110, y: 35 },
-    { x: 80, y: 50 }, { x: 60, y: 80 }, { x: 45, y: 90 }, { x: 50, y: 80 },
-    { x: 50, y: 70 }, { x: 90, y: 50 }, { x: 110, y: 55 }, { x: 130, y: 60 },
-    { x: 150, y: 68 }, { x: 165, y: 80 },
+    { x: 173, y: 88 }, { x: 167, y: 70 }, { x: 155, y: 66 }, { x: 142, y: 66 },
+    { x: 130, y: 64 }, { x: 120, y: 60 }, { x: 108, y: 54 }, { x: 96, y: 56 },
+    { x: 82, y: 64 }, { x: 70, y: 90 }, { x: 56, y: 93 }, { x: 41, y: 106 },
+    { x: 45, y: 117 }, { x: 67, y: 107 }, { x: 82, y: 92 }, { x: 108, y: 78 },
+    { x: 150, y: 57 }, { x: 173, y: 80 },
   ],
-  start: { x: 175, y: 110 },
+  start: { x: 172, y: 128 },
 }
 
-// Singapore (Marina Bay street circuit) — 19 corners, mostly 90°.
+// Singapore (Marina Bay, 4.940 km, 19 corners). Street circuit — many 90° turns.
+// Start at bottom-left, right along the bottom, up the right side, left along the top
+// (Anderson Bridge), back down through the Esplanade section.
 const SINGAPORE_PATH: CircuitPathDef = {
-  d: 'M 30 115 L 30 95 L 55 95 L 55 75 L 75 75 L 75 55 L 100 55 L 100 35 L 140 35 L 140 50 L 155 50 L 155 35 L 175 35 L 175 60 L 165 60 L 165 80 L 145 80 L 145 100 L 120 100 L 120 115 L 30 115 Z',
+  d: 'M 25 120 L 60 120 Q 70 120 70 110 L 70 95 Q 70 85 80 85 L 95 85 Q 105 85 105 75 L 105 55 Q 105 45 115 45 L 135 45 Q 145 45 145 35 L 145 28 Q 145 22 155 22 L 175 22 Q 185 22 185 32 L 185 55 Q 185 65 175 65 L 165 65 Q 155 65 155 75 L 155 90 Q 155 100 145 100 L 125 100 Q 115 100 115 110 L 115 120 Q 115 128 105 128 L 25 128 Q 18 128 18 120 L 18 120 Z',
   corners: [
-    { x: 30, y: 95 }, { x: 55, y: 95 }, { x: 55, y: 75 }, { x: 75, y: 75 },
-    { x: 75, y: 55 }, { x: 100, y: 55 }, { x: 100, y: 35 }, { x: 140, y: 35 },
-    { x: 140, y: 50 }, { x: 155, y: 50 }, { x: 155, y: 35 }, { x: 175, y: 35 },
-    { x: 175, y: 60 }, { x: 165, y: 60 }, { x: 165, y: 80 }, { x: 145, y: 80 },
-    { x: 145, y: 100 }, { x: 120, y: 100 }, { x: 120, y: 115 },
+    { x: 60, y: 120 }, { x: 70, y: 95 }, { x: 70, y: 85 }, { x: 80, y: 85 },
+    { x: 95, y: 85 }, { x: 105, y: 75 }, { x: 105, y: 55 }, { x: 105, y: 45 },
+    { x: 115, y: 45 }, { x: 135, y: 45 }, { x: 145, y: 35 }, { x: 145, y: 22 },
+    { x: 155, y: 22 }, { x: 175, y: 22 }, { x: 185, y: 32 }, { x: 185, y: 55 },
+    { x: 175, y: 65 }, { x: 155, y: 75 }, { x: 155, y: 90 },
   ],
-  start: { x: 30, y: 115 },
+  start: { x: 25, y: 120 },
 }
 
-// Austin (Circuit of the Americas) — 20 corners. Sweeping sector-1 esses,
-// long back straight, tight stadium section.
+// Austin / COTA (5.513 km, 20 corners). T1 uphill left, sweeping esses (T2-T9),
+// long back straight, stadium section (T13-T15), final corners.
 const AUSTIN_PATH: CircuitPathDef = {
-  d: 'M 25 110 L 28 95 L 42 85 L 48 70 L 62 65 L 68 52 L 82 50 L 88 38 L 102 38 L 108 28 L 125 32 L 140 45 L 165 50 L 175 70 L 165 82 L 175 92 L 160 100 L 145 96 L 132 105 L 105 108 L 60 112 Z',
+  d: 'M 22 115 Q 26 95 40 88 Q 54 82 48 68 Q 42 54 58 50 Q 74 46 68 34 Q 62 22 80 22 Q 98 22 104 34 Q 110 46 126 42 Q 142 38 156 50 Q 170 62 182 58 Q 190 54 186 68 Q 182 82 172 86 Q 162 90 168 100 Q 174 110 162 114 Q 150 118 136 112 Q 122 106 108 112 Q 94 118 70 116 Q 46 114 22 115 Z',
   corners: [
-    { x: 28, y: 95 }, { x: 42, y: 85 }, { x: 48, y: 70 }, { x: 62, y: 65 },
-    { x: 68, y: 52 }, { x: 82, y: 50 }, { x: 88, y: 38 }, { x: 102, y: 38 },
-    { x: 108, y: 28 }, { x: 125, y: 32 }, { x: 140, y: 45 }, { x: 165, y: 50 },
-    { x: 175, y: 70 }, { x: 165, y: 82 }, { x: 175, y: 92 }, { x: 160, y: 100 },
-    { x: 145, y: 96 }, { x: 132, y: 105 }, { x: 105, y: 108 }, { x: 60, y: 112 },
+    { x: 26, y: 95 }, { x: 40, y: 88 }, { x: 48, y: 68 }, { x: 48, y: 54 },
+    { x: 58, y: 50 }, { x: 68, y: 34 }, { x: 80, y: 22 }, { x: 98, y: 22 },
+    { x: 104, y: 34 }, { x: 110, y: 42 }, { x: 126, y: 42 }, { x: 156, y: 50 },
+    { x: 170, y: 62 }, { x: 182, y: 58 }, { x: 186, y: 68 }, { x: 172, y: 86 },
+    { x: 168, y: 100 }, { x: 162, y: 114 }, { x: 136, y: 112 }, { x: 108, y: 112 },
+  ],
+  start: { x: 22, y: 115 },
+}
+
+// Monaco (3.337 km, 19 corners). Tight street circuit — Swimming Pool, Loews Hairpin, Tunnel.
+const MONACO_PATH: CircuitPathDef = {
+  d: 'M 30 120 Q 50 122 60 115 Q 72 108 70 95 Q 68 82 80 78 Q 92 74 90 62 Q 88 50 100 48 Q 115 46 125 38 Q 135 30 150 35 Q 165 40 170 55 Q 175 70 165 80 Q 155 90 160 100 Q 165 110 150 115 Q 130 120 100 118 Q 70 116 50 120 Q 35 122 30 120 Z',
+  corners: [
+    { x: 50, y: 122 }, { x: 60, y: 115 }, { x: 70, y: 95 }, { x: 72, y: 85 },
+    { x: 80, y: 78 }, { x: 90, y: 62 }, { x: 95, y: 50 }, { x: 100, y: 48 },
+    { x: 115, y: 46 }, { x: 125, y: 38 }, { x: 135, y: 30 }, { x: 150, y: 35 },
+    { x: 165, y: 40 }, { x: 170, y: 55 }, { x: 175, y: 70 }, { x: 165, y: 80 },
+    { x: 160, y: 100 }, { x: 150, y: 115 }, { x: 100, y: 118 },
+  ],
+  start: { x: 30, y: 120 },
+}
+
+// Silverstone (5.891 km, 18 corners). Fast flowing — Maggotts/Becketts, Stowe, Club.
+const SILVERSTONE_PATH: CircuitPathDef = {
+  d: 'M 25 110 Q 35 88 52 80 Q 68 72 62 58 Q 56 44 72 38 Q 88 32 100 42 Q 112 52 128 46 Q 144 40 158 52 Q 172 64 180 56 Q 188 48 182 62 Q 176 76 166 82 Q 156 88 162 100 Q 168 112 154 116 Q 140 120 120 114 Q 100 108 80 112 Q 60 116 40 114 Q 28 112 25 110 Z',
+  corners: [
+    { x: 35, y: 88 }, { x: 52, y: 80 }, { x: 62, y: 58 }, { x: 72, y: 38 },
+    { x: 88, y: 32 }, { x: 100, y: 42 }, { x: 112, y: 52 }, { x: 128, y: 46 },
+    { x: 144, y: 40 }, { x: 158, y: 52 }, { x: 172, y: 64 }, { x: 180, y: 56 },
+    { x: 182, y: 62 }, { x: 166, y: 82 }, { x: 162, y: 100 }, { x: 154, y: 116 },
+    { x: 120, y: 114 }, { x: 80, y: 112 },
   ],
   start: { x: 25, y: 110 },
 }
 
+// Monza (5.793 km, 11 corners). High-speed — long straights, Lesmo curves, Ascari chicane.
+const MONZA_PATH: CircuitPathDef = {
+  d: 'M 30 120 L 80 120 Q 95 120 95 108 L 95 85 Q 95 72 110 70 Q 125 68 125 55 Q 125 42 140 42 Q 155 42 155 55 L 155 80 Q 155 92 170 92 L 180 92 Q 188 92 188 80 L 188 55 Q 188 42 175 38 L 140 38 Q 125 38 120 50 Q 115 62 100 60 Q 85 58 80 70 L 75 85 Q 72 95 60 98 Q 45 100 35 105 Q 25 110 30 120 Z',
+  corners: [
+    { x: 80, y: 120 }, { x: 95, y: 108 }, { x: 95, y: 85 }, { x: 110, y: 70 },
+    { x: 125, y: 55 }, { x: 140, y: 42 }, { x: 155, y: 42 }, { x: 155, y: 80 },
+    { x: 170, y: 92 }, { x: 188, y: 80 }, { x: 175, y: 38 },
+  ],
+  start: { x: 30, y: 120 },
+}
+
+// Spa-Francorchamps (7.004 km, 19 corners). Long — Eau Rouge/Raidillon, Pouhon, Bus Stop.
+const SPA_PATH: CircuitPathDef = {
+  d: 'M 25 115 Q 30 95 42 88 Q 54 80 48 66 Q 42 52 58 45 Q 74 38 85 48 Q 96 58 88 72 Q 80 86 95 90 Q 110 94 120 82 Q 130 70 145 75 Q 160 80 165 65 Q 170 50 155 38 Q 140 26 155 22 Q 170 18 180 30 Q 190 42 182 58 Q 174 74 168 88 Q 162 102 148 108 Q 134 114 110 112 Q 86 110 60 114 Q 42 116 25 115 Z',
+  corners: [
+    { x: 30, y: 95 }, { x: 42, y: 88 }, { x: 48, y: 66 }, { x: 58, y: 45 },
+    { x: 74, y: 38 }, { x: 85, y: 48 }, { x: 96, y: 58 }, { x: 88, y: 72 },
+    { x: 95, y: 90 }, { x: 110, y: 94 }, { x: 120, y: 82 }, { x: 130, y: 70 },
+    { x: 145, y: 75 }, { x: 165, y: 65 }, { x: 170, y: 50 }, { x: 155, y: 38 },
+    { x: 155, y: 22 }, { x: 180, y: 30 }, { x: 182, y: 58 },
+  ],
+  start: { x: 25, y: 115 },
+}
+
+// Zandvoort (4.259 km, 14 corners). Banking — Hugenholtz, Arie Luyendyk, Scheivlak.
+const ZANDVOORT_PATH: CircuitPathDef = {
+  d: 'M 30 115 Q 40 95 55 88 Q 70 80 65 66 Q 60 52 75 48 Q 90 44 100 55 Q 110 66 125 60 Q 140 54 155 64 Q 170 74 175 60 Q 180 46 168 38 Q 156 30 140 35 Q 125 40 110 35 Q 95 30 80 38 Q 65 46 50 50 Q 35 54 28 68 Q 22 82 25 95 Q 28 108 30 115 Z',
+  corners: [
+    { x: 40, y: 95 }, { x: 55, y: 88 }, { x: 65, y: 66 }, { x: 75, y: 48 },
+    { x: 90, y: 44 }, { x: 100, y: 55 }, { x: 125, y: 60 }, { x: 140, y: 54 },
+    { x: 155, y: 64 }, { x: 175, y: 60 }, { x: 180, y: 46 }, { x: 168, y: 38 },
+    { x: 140, y: 35 }, { x: 80, y: 38 },
+  ],
+  start: { x: 30, y: 115 },
+}
+
 // Fallback: generic closed loop with 8 corners.
 const UNKNOWN_PATH: CircuitPathDef = {
-  d: 'M 100 20 L 145 30 L 175 65 L 170 105 L 135 125 L 80 125 L 30 105 L 25 65 L 55 30 Z',
+  d: 'M 100 22 Q 140 28 170 58 Q 182 88 160 112 Q 120 128 75 122 Q 32 112 22 82 Q 18 52 50 32 Q 75 22 100 22 Z',
   corners: [
-    { x: 100, y: 20 }, { x: 145, y: 30 }, { x: 175, y: 65 }, { x: 170, y: 105 },
-    { x: 135, y: 125 }, { x: 80, y: 125 }, { x: 30, y: 105 }, { x: 25, y: 65 },
+    { x: 100, y: 22 }, { x: 140, y: 28 }, { x: 170, y: 58 }, { x: 182, y: 88 },
+    { x: 160, y: 112 }, { x: 120, y: 128 }, { x: 75, y: 122 }, { x: 32, y: 112 },
   ],
-  start: { x: 100, y: 20 },
+  start: { x: 100, y: 22 },
 }
 
 const CIRCUIT_PATHS: Record<CircuitKey, CircuitPathDef> = {
   Suzuka: SUZUKA_PATH,
   Singapore: SINGAPORE_PATH,
   Austin: AUSTIN_PATH,
+  Monaco: MONACO_PATH,
+  Silverstone: SILVERSTONE_PATH,
+  Monza: MONZA_PATH,
+  Spa: SPA_PATH,
+  Zandvoort: ZANDVOORT_PATH,
   unknown: UNKNOWN_PATH,
 }
 
@@ -286,6 +356,11 @@ function resolveCircuit(name: string): CircuitKey {
   if (n.includes('suzuka')) return 'Suzuka'
   if (n.includes('singapore') || n.includes('marina')) return 'Singapore'
   if (n.includes('austin') || n.includes('americas') || n.includes('cota')) return 'Austin'
+  if (n.includes('monaco')) return 'Monaco'
+  if (n.includes('silverstone')) return 'Silverstone'
+  if (n.includes('monza')) return 'Monza'
+  if (n.includes('spa') || n.includes('francorchamps')) return 'Spa'
+  if (n.includes('zandvoort')) return 'Zandvoort'
   return 'unknown'
 }
 

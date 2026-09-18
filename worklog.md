@@ -966,3 +966,29 @@ Fix:
 Verification:
 - `bun run lint`: 0 errors.
 - agent-browser: opened the app → no runtime error → Export drawer opens with "7/7 ready" and all 7 datasets showing live row counts (Session laps 72, Delta-P 33, Tire deg 11, Fuel 11, Deployments 5, Audit log, Leaderboard).
+
+---
+Task ID: round-11-trackmap-fix
+Agent: main
+Task: Fix incorrect track map layouts + verify no frontend errors
+
+Root Cause (track maps):
+- The original circuit path definitions used only straight `L` (line) commands, making the tracks look like angular polygons instead of smooth racing circuits. The shapes didn't match the real circuit layouts at all.
+- Only 3 circuits had hand-crafted paths (Suzuka, Singapore, Austin); the other 5 seeded circuits (Monaco, Silverstone, Monza, Spa, Zandvoort) fell back to the generic "unknown" 8-corner polygon.
+
+Fix:
+- Rewrote ALL circuit path definitions with smooth quadratic bezier (`Q`) curves instead of straight lines, making the tracks look like real racing circuits with flowing corners.
+- **Suzuka**: Smooth figure-8 with the Degner/Spoon crossover, S-curves, hairpin, 130R, and Casio chicane — all using bezier curves.
+- **Singapore**: Rectangular street circuit layout with many 90° corners matching Marina Bay.
+- **Austin (COTA)**: T1 uphill, sweeping esses (T2-T9), back straight, stadium section.
+- **5 new circuits added**: Monaco (tight street circuit with Swimming Pool/Loews/Tunnel), Silverstone (fast flowing with Maggotts/Becketts), Monza (high-speed with long straights/Lesmo/Ascari), Spa (long with Eau Rouge/Pouhon/Bus Stop), Zandvoort (banking with Hugenholtz/Arie Luyendyk).
+- Updated `resolveCircuit()` to recognize all 8 circuits by name.
+- Updated `CIRCUIT_PATHS` to include all 8 + the unknown fallback.
+- The `corners` arrays (used for corner labels + progress calculation via `pointAtProgress`) remain as approximate straight-line vertices — the visual rendering uses the smooth bezier `d` path, while the progress/labels use the approximate vertices.
+
+Also verified: no frontend runtime errors across all 8 views, all 5 drawers (Export, Audit, Alerts, Help, Settings, AI Engineer), Command Palette, keyboard shortcuts, and all interactive features (Playback scrubber, Deep-Dive track delta map, Analytics circuit context, Overview watermark).
+
+Verification:
+- `bun run lint`: 0 errors.
+- agent-browser: all 8 views render with 0 runtime errors; track maps render on Overview (Singapore watermark), Analytics (circuit context card), Deep-Dive (track delta map with corner halos), and Playback (scrubber track map with progress dot).
+- Screenshots: download/screenshot-trackmaps-fixed.png, download/screenshot-trackmaps-analytics.png.
