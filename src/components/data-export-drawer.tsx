@@ -153,12 +153,15 @@ export function DataExportDrawer() {
   // ---- data queries (fire when drawer opens) ----
 
   // Drivers list → resolve TSU's driverId for analytics endpoints
+  // NOTE: uses a unique query key (not ['drivers']) to avoid dedup collision
+  // with analytics.tsx / builder.tsx which return the whole { drivers: [...] } object
   const driversQuery = useQuery({
-    queryKey: ['drivers'],
+    queryKey: ['drivers-export'],
     queryFn: async () => {
       const r = await fetch('/api/drivers')
       const j = await r.json()
-      return (j.drivers ?? []) as {
+      const drivers = Array.isArray(j?.drivers) ? j.drivers : []
+      return drivers as {
         id: string
         code: string
         name: string
@@ -169,7 +172,7 @@ export function DataExportDrawer() {
     enabled: open,
     staleTime: 60_000,
   })
-  const tsuDriverId = driversQuery.data?.find((d) => d.code === 'TSU')?.id
+  const tsuDriverId = Array.isArray(driversQuery.data) ? driversQuery.data.find((d) => d.code === 'TSU')?.id : undefined
 
   const hasSession = !!selectedSessionId
   const hasDriver = !!tsuDriverId

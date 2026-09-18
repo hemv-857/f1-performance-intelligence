@@ -946,3 +946,23 @@ Unresolved / Next-phase recommendations:
 - Add export scheduling (auto-export a report after each session completes).
 - Add a "dark/light theme" toggle (currently always dark carbon).
 - Add a custom SQL query runner in the Data Export Center.
+
+---
+Task ID: round-11-bugfix
+Agent: main
+Task: Fix runtime TypeError in Data Export Drawer (driversQuery.data?.find is not a function)
+
+Root Cause:
+- Three components (analytics.tsx, builder.tsx, data-export-drawer.tsx) all used the same react-query key `['drivers']` but returned DIFFERENT data shapes:
+  - analytics.tsx + builder.tsx: `queryFn: async () => fetch('/api/drivers').then(r => r.json())` → returned the whole `{ drivers: [...] }` object
+  - data-export-drawer.tsx: `queryFn: async () => { ... return (j.drivers ?? []) }` → returned just the `[...]` array
+- React-query deduplicates by query key, so whichever query resolved first set the cache for ALL three. When analytics/builder resolved first (returning `{ drivers: [...] }`), the data-export-drawer received that object instead of the array — so `.find()` threw "is not a function" because it was called on an object, not an array.
+
+Fix:
+- Changed the data-export-drawer's query key from `['drivers']` to `['drivers-export']` (unique key, no dedup collision).
+- Added `Array.isArray()` defensive check on the access: `Array.isArray(driversQuery.data) ? driversQuery.data.find(...) : undefined`.
+- Added `Array.isArray(j?.drivers)` defensive check in the queryFn to ensure it always returns an array.
+
+Verification:
+- `bun run lint`: 0 errors.
+- agent-browser: opened the app → no runtime error → Export drawer opens with "7/7 ready" and all 7 datasets showing live row counts (Session laps 72, Delta-P 33, Tire deg 11, Fuel 11, Deployments 5, Audit log, Leaderboard).
