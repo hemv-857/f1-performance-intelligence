@@ -1,0 +1,20 @@
+# Binary files
+*.db binary
+*.png binary
+*.jpg binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Normalize line endings
+* text=auto
+*.ts text diff=typescript
+*.tsx text diff=typescript
+*.js text diff=javascript
+*.json text
+*.md text diff=markdown
+*.css text
+*.html text
+*.yaml text
+*.yml text
+*.sh text eol=lf
