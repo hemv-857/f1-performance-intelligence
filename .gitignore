@@ -50,6 +50,7 @@ tool-results/
 
 # downloaded screenshots and reports
 download/
+screenshot-*.png
 
 # vercel
 .vercel
