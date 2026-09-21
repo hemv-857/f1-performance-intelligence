@@ -64,7 +64,7 @@ yarn.lock
 next-env.d.ts
 local-*
 .claude
-.z-ai-config
+
 test
 prompt
 

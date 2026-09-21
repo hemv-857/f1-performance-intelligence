@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import ZAI from 'z-ai-web-dev-sdk'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+const AI_API_URL = process.env.AI_API_URL || 'https://api.openai.com/v1/chat/completions'
+const AI_API_KEY = process.env.AI_API_KEY || ''
+const AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini'
 
 // POST /api/ai-engineer
 // Body: { message: string, sessionId?: string, driverCode?: string, history?: [{role,content}] }
@@ -20,6 +23,13 @@ export async function POST(req: Request) {
 
   if (!message?.trim()) {
     return NextResponse.json({ error: 'message required' }, { status: 400 })
+  }
+
+  if (!AI_API_KEY) {
+    return NextResponse.json(
+      { error: 'AI API not configured', reply: 'AI_API_KEY environment variable is not set. Please configure an OpenAI-compatible API key.' },
+      { status: 503 }
+    )
   }
 
   // ---- Gather live context from the warehouse ----
@@ -52,7 +62,7 @@ export async function POST(req: Request) {
     if (session) {
       context += `SESSION: Round ${session.round} ${session.type} at ${session.circuit.name} (${session.circuit.country}), ${session.circuit.trackLength}km, ${session.circuit.corners} corners. Status: ${session.status}. Air ${session.airTemp?.toFixed(1)}°C, Track ${session.trackTemp?.toFixed(1)}°C.\n`
       // best laps per driver
-      const byDriver = new Map<string, { code: string; name: string; isRival: boolean; best: any }>()
+      const byDriver = new Map<string, { code: string; name: string; isRival: boolean; best: { lapTimeMs: number; lapNumber: number; tireCompound: string | null; sector1Ms: number | null; sector2Ms: number | null; sector3Ms: number | null } }>()
       for (const l of session.laps) {
         if (!l.isValid) continue
         const existing = byDriver.get(l.driver.code)
@@ -125,26 +135,46 @@ PLATFORM CONTEXT:\n${context}`
 
   // ---- Call the LLM ----
   try {
-    const zai = await ZAI.create()
     const messages = [
       { role: 'assistant' as const, content: systemPrompt },
       ...history.slice(-8).map((h) => ({ role: h.role, content: h.content })),
       { role: 'user' as const, content: message },
     ]
-    const completion = await zai.chat.completions.create({
-      messages,
-      thinking: { type: 'disabled' },
+
+    const res = await fetch(AI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${AI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        messages,
+        temperature: 0.3,
+        max_tokens: 1024,
+      }),
     })
-    const reply = completion.choices[0]?.message?.content ?? ''
+
+    if (!res.ok) {
+      const err = await res.text()
+      return NextResponse.json(
+        { error: 'LLM call failed', detail: err, reply: 'I could not reach the model right now. Please retry.' },
+        { status: 502 }
+      )
+    }
+
+    const data = await res.json()
+    const reply = data.choices?.[0]?.message?.content ?? ''
     return NextResponse.json({
       reply,
       contextSize: context.length,
       usedSession: !!sessionId,
       usedDriver: driverCode ?? null,
     })
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'unknown error'
     return NextResponse.json(
-      { error: 'LLM call failed', detail: e?.message, reply: 'I could not reach the model right now. Please retry.' },
+      { error: 'LLM call failed', detail: msg, reply: 'I could not reach the model right now. Please retry.' },
       { status: 500 }
     )
   }
