@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 const AI_API_URL = process.env.AI_API_URL || 'https://api.groq.com/openai/v1/chat/completions'
 const AI_API_KEY = process.env.AI_API_KEY || ''
-const AI_MODEL = process.env.AI_MODEL || 'llama-3.3-70b-versatile'
+const AI_MODEL = process.env.AI_MODEL || 'qwen/qwen3.8-27b'
 
 // POST /api/ai-engineer
 // Body: { message: string, sessionId?: string, driverCode?: string, history?: [{role,content}] }
