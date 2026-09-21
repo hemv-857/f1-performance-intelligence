@@ -52,6 +52,10 @@ tool-results/
 download/
 screenshot-*.png
 
+# lockfiles (bun is canonical)
+package-lock.json
+yarn.lock
+
 # vercel
 .vercel
 

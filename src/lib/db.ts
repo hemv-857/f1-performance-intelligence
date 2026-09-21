@@ -4,13 +4,9 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-// In dev, the long-lived Node process keeps the PrismaClient instance cached on
-// globalThis even after `prisma generate` produces a new client (e.g. when a new
-// model is added). Detect that staleness by checking for a known recent model and
-// recreate the client if it's missing.
 function createClient(): PrismaClient {
   return new PrismaClient({
-    log: ['query'],
+    log: process.env.NODE_ENV === 'development' ? ['query'] : [],
   })
 }
 
