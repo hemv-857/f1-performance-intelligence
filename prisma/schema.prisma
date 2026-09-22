@@ -1,4 +1,4 @@
-// Prisma schema for F1 Performance Intelligence Platform (Racing Bulls)
+// Prisma schema for F1 Performance Intelligence Platform (Apex Racing)
 
 generator client {
   provider = "prisma-client-js"

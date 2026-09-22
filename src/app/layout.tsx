@@ -15,11 +15,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Racing Bulls · F1 Performance Intelligence",
+  title: "Apex Racing · F1 Performance Intelligence",
   description:
-    "Unified multi-discipline engineering platform for Racing Bulls F1 — telemetry ingestion, analytics warehouse, low-code dashboards, DevOps & race ops.",
-  keywords: ["F1", "Racing Bulls", "telemetry", "Kafka", "Spark", "Snowflake", "dbt", "DevOps"],
-  authors: [{ name: "Racing Bulls Performance Engineering" }],
+    "Unified multi-discipline engineering platform for Apex Racing F1 — telemetry ingestion, analytics warehouse, low-code dashboards, DevOps & race ops.",
+  keywords: ["F1", "Apex Racing", "telemetry", "Kafka", "Spark", "Snowflake", "dbt", "DevOps"],
+  authors: [{ name: "Apex Racing Performance Engineering" }],
   icons: {
     icon: "/logo.svg",
   },

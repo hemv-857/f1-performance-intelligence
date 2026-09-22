@@ -8,7 +8,7 @@
 ![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-> Unified multi-discipline engineering platform for the **Racing Bulls F1 team** — real-time telemetry ingestion, strategic analytics, low-code dashboards, DevOps, and AI-powered race engineering.
+> Unified multi-discipline engineering platform for the **Apex Racing F1 team** — real-time telemetry ingestion, strategic analytics, low-code dashboards, DevOps, and AI-powered race engineering.
 
 ---
 
@@ -108,7 +108,7 @@ AI_MODEL=qwen/qwen3.8-27b
 
 | Model | Purpose |
 |-------|---------|
-| `Driver` | 10 drivers (6 Racing Bulls + 4 rivals) |
+| `Driver` | 10 drivers (6 Apex Racing + 4 rivals) |
 | `Circuit` | 8 circuits (Suzuka, Singapore, Austin, Monaco, Silverstone, Spa, Monza, Zandvoort) |
 | `Channel` | 14 telemetry channels |
 | `Session` | 40 sessions across 3 seasons |

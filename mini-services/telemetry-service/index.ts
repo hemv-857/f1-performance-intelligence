@@ -38,8 +38,8 @@ interface LiveDriver {
 }
 
 const OUR_DRIVERS = [
-  { code: 'TSU', name: 'Yuki Tsunoda', team: 'Racing Bulls', number: 22, isRival: false },
-  { code: 'LAW', name: 'Liam Lawson', team: 'Racing Bulls', number: 30, isRival: false },
+  { code: 'TSU', name: 'Yuki Tsunoda', team: 'Apex Racing', number: 22, isRival: false },
+  { code: 'LAW', name: 'Liam Lawson', team: 'Apex Racing', number: 30, isRival: false },
 ]
 const RIVALS = [
   { code: 'VER', name: 'Max Verstappen', team: 'Red Bull Racing', number: 1, isRival: true },

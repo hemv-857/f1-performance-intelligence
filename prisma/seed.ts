@@ -1,4 +1,4 @@
-// Seed Racing Bulls F1 Performance Intelligence Platform
+// Seed Apex Racing F1 Performance Intelligence Platform
 // Run: bun run prisma/seed.ts
 import { db } from '../src/lib/db'
 
@@ -42,8 +42,8 @@ async function main() {
 
   // ---- Drivers ----
   const ourDrivers = [
-    { code: 'TSU', name: 'Yuki Tsunoda', team: 'Racing Bulls', number: 22, isRival: false, nationality: 'Japan' },
-    { code: 'LAW', name: 'Liam Lawson', team: 'Racing Bulls', number: 30, isRival: false, nationality: 'New Zealand' },
+    { code: 'TSU', name: 'Yuki Tsunoda', team: 'Apex Racing', number: 22, isRival: false, nationality: 'Japan' },
+    { code: 'LAW', name: 'Liam Lawson', team: 'Apex Racing', number: 30, isRival: false, nationality: 'New Zealand' },
   ]
   const rivals = [
     { code: 'VER', name: 'Max Verstappen', team: 'Red Bull Racing', number: 1, isRival: true, nationality: 'Netherlands' },

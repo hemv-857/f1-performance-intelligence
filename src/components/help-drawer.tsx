@@ -294,7 +294,7 @@ function OverviewTab() {
     <div className="space-y-5 pt-3">
       <div>
         <div className="flex items-center gap-2 mb-2">
-          <h2 className="text-base font-semibold tracking-tight">Racing Bulls Performance Intelligence Platform</h2>
+          <h2 className="text-base font-semibold tracking-tight">Apex Racing Performance Intelligence Platform</h2>
         </div>
         <Badge variant="outline" className="font-mono-nums text-[10px] border-red-500/40 bg-red-500/10 text-red-300">
           v2.4.1 · round-11

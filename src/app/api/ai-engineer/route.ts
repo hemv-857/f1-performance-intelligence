@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   }
 
   // ---- Gather live context from the warehouse ----
-  let context = 'F1 Performance Intelligence Platform — Racing Bulls\n'
+  let context = 'F1 Performance Intelligence Platform — Apex Racing\n'
   context += `Current time: ${new Date().toISOString()}\n\n`
 
   // Active alerts
@@ -117,7 +117,7 @@ export async function POST(req: Request) {
   }
 
   // ---- System prompt ----
-  const systemPrompt = `You are the AI Race Engineer Assistant for the Racing Bulls F1 team (Performance Intelligence Platform).
+  const systemPrompt = `You are the AI Race Engineer Assistant for the Apex Racing F1 team (Performance Intelligence Platform).
 You help performance engineers diagnose telemetry anomalies, interpret delta-P vs rivals, recommend setup changes, and plan race strategy.
 
 You have access to LIVE platform context (active alerts, session results, delta-P, channel diffs) which will be provided in the user message.

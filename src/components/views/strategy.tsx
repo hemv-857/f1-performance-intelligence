@@ -773,8 +773,8 @@ function LiveTireTempsCard({ socket }: { socket: ReturnType<typeof useTelemetryS
   const ourDrivers = socket.drivers.filter((d) => !d.isRival).slice(0, 2)
   // Fallback to TSU/LAW if no drivers loaded yet.
   const drivers = ourDrivers.length > 0 ? ourDrivers : [
-    { code: 'TSU', name: 'Yuki Tsunoda', team: 'Racing Bulls', number: 22, isRival: false } as any,
-    { code: 'LAW', name: 'Liam Lawson', team: 'Racing Bulls', number: 30, isRival: false } as any,
+    { code: 'TSU', name: 'Yuki Tsunoda', team: 'Apex Racing', number: 22, isRival: false } as any,
+    { code: 'LAW', name: 'Liam Lawson', team: 'Apex Racing', number: 30, isRival: false } as any,
   ]
 
   return (

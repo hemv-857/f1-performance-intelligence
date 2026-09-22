@@ -35,7 +35,7 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    title: 'Welcome to the Racing Bulls Performance Intelligence Platform',
+    title: 'Welcome to the Apex Racing Performance Intelligence Platform',
     description: (
       <>
         Your unified engineering workstation for race weekend operations.{' '}

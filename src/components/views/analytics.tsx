@@ -509,8 +509,8 @@ function HeadToHeadTab({
     { pos: 2, code: 'NOR', team: 'McLaren', pts: 342, wins: 4, podiums: 11, isRival: true },
     { pos: 3, code: 'LEC', team: 'Ferrari', pts: 318, wins: 3, podiums: 9, isRival: true },
     { pos: 4, code: 'RUS', team: 'Mercedes', pts: 291, wins: 2, podiums: 8, isRival: true },
-    { pos: 5, code: 'TSU', team: 'Racing Bulls', pts: 164, wins: 0, podiums: 2, isRival: false },
-    { pos: 6, code: 'LAW', team: 'Racing Bulls', pts: 138, wins: 0, podiums: 0, isRival: false },
+    { pos: 5, code: 'TSU', team: 'Apex Racing', pts: 164, wins: 0, podiums: 2, isRival: false },
+    { pos: 6, code: 'LAW', team: 'Apex Racing', pts: 138, wins: 0, podiums: 0, isRival: false },
   ]
 
   return (
@@ -631,7 +631,7 @@ function ConstructorsTab() {
     { pos: 2, name: 'McLaren', car: 'MCL39', pts: 658, wins: 6, podiums: 19, poles: 4, form: [2, 1, 3, 2, 1], color: '#fbbf24', isOurs: false },
     { pos: 3, name: 'Ferrari', car: 'SF-25', pts: 612, wins: 4, podiums: 15, poles: 2, form: [3, 3, 2, 4, 2], color: '#34d399', isOurs: false },
     { pos: 4, name: 'Mercedes', car: 'W16', pts: 534, wins: 2, podiums: 12, poles: 1, form: [4, 5, 4, 3, 5], color: '#fb923c', isOurs: false },
-    { pos: 5, name: 'Racing Bulls', car: 'VCARB 02', pts: 302, wins: 0, podiums: 2, poles: 0, form: [6, 5, 6, 5, 4], color: '#fb7185', isOurs: true },
+    { pos: 5, name: 'Apex Racing', car: 'VCARB 02', pts: 302, wins: 0, podiums: 2, poles: 0, form: [6, 5, 6, 5, 4], color: '#fb7185', isOurs: true },
   ]
 
   // Cumulative constructors' points over 16 rounds. Monotonically increasing;
@@ -655,7 +655,7 @@ function ConstructorsTab() {
     { round: 16, redBull: 729, mcLaren: 658, ferrari: 612, mercedes: 534, racingBulls: 302 },
   ]
 
-  // Battle matrix — Racing Bulls vs each rival over the last 4 rounds.
+  // Battle matrix — Apex Racing vs each rival over the last 4 rounds.
   // Each cell = our points that round − their points that round.
   const rivals = [
     { key: 'rb',  code: 'RBR', name: 'Red Bull', color: '#f87171' },
@@ -792,7 +792,7 @@ function ConstructorsTab() {
               <Line type="monotone" dataKey="mcLaren"      name="McLaren"       stroke="#fbbf24" strokeWidth={2.5} dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="ferrari"      name="Ferrari"       stroke="#34d399" strokeWidth={2.5} dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="mercedes"     name="Mercedes"      stroke="#fb923c" strokeWidth={2.5} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="racingBulls"  name="Racing Bulls"  stroke="#fb7185" strokeWidth={2.5} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="racingBulls"  name="Apex Racing"  stroke="#fb7185" strokeWidth={2.5} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>

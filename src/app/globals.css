@@ -43,7 +43,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* Racing Bulls performance intelligence — carbon + racing-red dark theme (default) */
+/* Apex Racing performance intelligence — carbon + racing-red dark theme (default) */
 :root,
 .dark {
   --radius: 0.5rem;

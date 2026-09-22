@@ -187,7 +187,7 @@ export function AppShell() {
             </div>
             <div className="leading-tight">
               <div className="text-sm font-bold tracking-tight">
-                Racing Bulls <span className="text-muted-foreground font-normal">·</span> Performance Intelligence
+                Apex Racing <span className="text-muted-foreground font-normal">·</span> Performance Intelligence
               </div>
               <div className="hidden sm:block text-[10px] text-muted-foreground font-mono-nums">
                 F1 ENGINEERING PLATFORM · v2.4.1
@@ -366,7 +366,7 @@ export function AppShell() {
       <footer className="mt-auto border-t border-border/60 bg-background/80 backdrop-blur-xl">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-4 py-2.5 text-[11px] text-muted-foreground">
           <div className="flex items-center gap-3 font-mono-nums">
-            <span>Racing Bulls Performance Engineering</span>
+            <span>Apex Racing Performance Engineering</span>
             <span className="text-border">|</span>
             <span className="hidden sm:inline">Kafka · Spark · Snowflake · dbt · K8s · Next.js</span>
           </div>

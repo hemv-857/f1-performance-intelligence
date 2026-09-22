@@ -8,7 +8,7 @@ const AppShell = dynamic(() => import('@/components/app-shell').then((m) => m.Ap
   loading: () => (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background">
       <div className="h-12 w-12 rounded-full border-2 border-red-500/40 border-t-red-500 animate-spin" />
-      <p className="text-sm text-muted-foreground font-mono-nums">Booting Racing Bulls telemetry platform…</p>
+      <p className="text-sm text-muted-foreground font-mono-nums">Booting Apex Racing telemetry platform…</p>
     </div>
   ),
 })
