@@ -146,3 +146,13 @@ prisma/
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Related Projects
+
+Part of the Apex Racing F1 suite — each repo owns a distinct concern:
+
+| Repo | Role |
+|------|------|
+| [apex-racing-live-strategy](https://github.com/hemv-857/apex-racing-live-strategy) | Live race ops + discrete-event strategy simulator |
+| [f1-performance-intelligence](https://github.com/hemv-857/f1-performance-intelligence) | Telemetry ingestion, analytics dashboards, AI race engineer |
+| [predictive-tire-engine](https://github.com/hemv-857/predictive-tire-engine) | Tire degradation ML + pit-window decision support |
