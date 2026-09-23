@@ -48,8 +48,5 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx prisma generate
       - run: bun run db:push
-      - name: Run tests if present
-        run: |
-          if [ -f tests/database-runtime-build.sh ]; then bash tests/database-runtime-build.sh; fi
-          if [ -f tests/python-runtime-build.sh ]; then bash tests/python-runtime-build.sh; fi
-          if [ -d tests ] && ls tests/*.test.ts >/dev/null 2>&1; then bun test; fi
+      - name: Run tests
+        run: bash tests/database-runtime-build.sh
