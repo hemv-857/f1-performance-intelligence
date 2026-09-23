@@ -55,12 +55,12 @@ const KEY_METRICS: { label: string; value: string }[] = [
   { label: 'Microservices', value: '8' },
 ]
 
-interface ShortcutRow {
+interface ShortcutItem {
   keys: string[] // each entry rendered as its own <kbd>
   label: string
 }
 
-const NAV_SHORTCUTS: ShortcutRow[] = [
+const NAV_SHORTCUTS: ShortcutItem[] = [
   { keys: ['g', 'o'], label: 'Overview' },
   { keys: ['g', 't'], label: 'Telemetry Viewer' },
   { keys: ['g', 'b'], label: 'Low-Code Builder' },
@@ -71,7 +71,7 @@ const NAV_SHORTCUTS: ShortcutRow[] = [
   { keys: ['g', 's'], label: 'Strategy' },
 ]
 
-const GLOBAL_SHORTCUTS: ShortcutRow[] = [
+const GLOBAL_SHORTCUTS: ShortcutItem[] = [
   { keys: ['⌘', 'K'], label: 'Command palette' },
   { keys: ['?'], label: 'This help dialog' },
   { keys: ['Esc'], label: 'Close dialog / panel' },
@@ -244,7 +244,7 @@ function KbdBadge({ children }: { children: React.ReactNode }) {
   )
 }
 
-function ShortcutRow({ keys, label }: ShortcutRow) {
+function ShortcutRow({ keys, label }: ShortcutItem) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5 px-2 rounded hover:bg-accent/40 transition-colors">
       <span className="text-xs text-foreground">{label}</span>
