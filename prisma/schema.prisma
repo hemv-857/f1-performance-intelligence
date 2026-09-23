@@ -23,6 +23,7 @@ model Driver {
 
   laps        Lap[]
   alerts      Alert[]
+  deltas      DeltaRecord[]
 }
 
 model Circuit {
@@ -116,6 +117,7 @@ model DeltaRecord {
   id          String   @id @default(cuid())
   sessionId   String
   driverId    String
+  driver      Driver   @relation(fields: [driverId], references: [id])
   rivalId     String
   lapNumber   Int
   deltaMs     Float

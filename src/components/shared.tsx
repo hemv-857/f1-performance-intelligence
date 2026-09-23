@@ -63,7 +63,7 @@ export function StatCard({
   }
   // animated count-up for numeric values
   const numValue = typeof value === 'number' ? value : parseFloat(String(value).replace(/[^0-9.\-]/g, ''))
-  const isNumeric = typeof value === 'number' || (!isNaN(numValue) && String(value).match(/^[\d.,]+$/))
+  const isNumeric = typeof value === 'number' || (!isNaN(numValue) && /^[\d.,]+$/.test(String(value)))
   const animated = useCountUp(isNumeric ? numValue : 0, { duration: 700, enabled: animate && isNumeric })
 
   if (loading) return <SkeletonStatCard />

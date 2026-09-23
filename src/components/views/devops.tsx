@@ -262,7 +262,6 @@ export function DevOpsView() {
   const triggerCI = () => {
     if (triggering) return
     setTriggering(true)
-    setCountdown(30)
     // reset to first stage running
     setStages(
       initialStages.map((s, i) =>
