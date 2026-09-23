@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DATABASE_URL: file:./db/custom.db
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & TypeCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bunx prisma generate
+      - run: bun run build
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bunx prisma generate
+      - run: bun run db:push
+      - name: Run tests if present
+        run: |
+          if [ -f tests/database-runtime-build.sh ]; then bash tests/database-runtime-build.sh; fi
+          if [ -f tests/python-runtime-build.sh ]; then bash tests/python-runtime-build.sh; fi
+          if [ -d tests ] && ls tests/*.test.ts >/dev/null 2>&1; then bun test; fi
