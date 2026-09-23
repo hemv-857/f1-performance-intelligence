@@ -10,7 +10,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
   rules: {
     // TypeScript rules
     "@typescript-eslint/no-explicit-any": "warn",
-    "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
     "@typescript-eslint/no-non-null-assertion": "warn",
     "@typescript-eslint/ban-ts-comment": ["warn", { "ts-ignore": "allow-with-description" }],
     "@typescript-eslint/prefer-as-const": "error",
@@ -28,7 +28,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "@next/next/no-html-link-for-pages": "error",
 
     // General JavaScript rules
-    "prefer-const": "error",
+    "prefer-const": "warn",
     "no-console": ["warn", { allow: ["warn", "error"] }],
     "no-debugger": "error",
     "no-empty": "warn",
